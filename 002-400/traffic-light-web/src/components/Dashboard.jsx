@@ -13,6 +13,11 @@ const Dashboard = ({
 	onEdit,
 	onDelete,
 	onAddSetting,
+	editModalOpen,
+	editItem,
+	onEditChange,
+	onEditSave,
+	onEditCancel,
 }) => (
 	<div className="dashboard-bg">
 		<header className="dashboard-header">
@@ -105,7 +110,7 @@ const Dashboard = ({
 				</div>
 			</div>
 			<div className="time-settings">
-				<h3>滞沙时间设置</h3>
+				<h3>潮汐时间设置</h3>
 				<label>早高峰开始时间</label>
 				<input
 					type="time"
@@ -131,7 +136,7 @@ const Dashboard = ({
 					onChange={(e) => onTimeChange("eveningEnd", e.target.value)}
 				/>
 				<button className="save-btn" onClick={onSaveTime}>
-					保存滞沙时间
+					保存潮汐时间
 				</button>
 			</div>
 			<button className="add-setting-btn" onClick={onAddSetting}>
@@ -187,6 +192,88 @@ const Dashboard = ({
 				</table>
 			</div>
 		</div>
+		{editModalOpen && (
+			<div className="modal-mask">
+				<div className="modal">
+					<div className="modal-header">
+						<span>编辑设置</span>
+						<button className="modal-close" onClick={onEditCancel}>
+							×
+						</button>
+					</div>
+					<div className="modal-body">
+						<label>南北红灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.nsRed}
+							onChange={(e) => onEditChange("nsRed", Number(e.target.value))}
+						/>
+						<label>南北绿灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.nsGreen}
+							onChange={(e) => onEditChange("nsGreen", Number(e.target.value))}
+						/>
+						<label>南北黄灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.nsYellow}
+							onChange={(e) => onEditChange("nsYellow", Number(e.target.value))}
+						/>
+						<label>东西红灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.ewRed}
+							onChange={(e) => onEditChange("ewRed", Number(e.target.value))}
+						/>
+						<label>东西绿灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.ewGreen}
+							onChange={(e) => onEditChange("ewGreen", Number(e.target.value))}
+						/>
+						<label>东西黄灯时长（秒）</label>
+						<input
+							type="number"
+							value={editItem.ewYellow}
+							onChange={(e) => onEditChange("ewYellow", Number(e.target.value))}
+						/>
+						<label>早高峰开始时间</label>
+						<input
+							type="time"
+							value={editItem.morningStart}
+							onChange={(e) => onEditChange("morningStart", e.target.value)}
+						/>
+						<label>早高峰结束时间</label>
+						<input
+							type="time"
+							value={editItem.morningEnd}
+							onChange={(e) => onEditChange("morningEnd", e.target.value)}
+						/>
+						<label>晚高峰开始时间</label>
+						<input
+							type="time"
+							value={editItem.eveningStart}
+							onChange={(e) => onEditChange("eveningStart", e.target.value)}
+						/>
+						<label>晚高峰结束时间</label>
+						<input
+							type="time"
+							value={editItem.eveningEnd}
+							onChange={(e) => onEditChange("eveningEnd", e.target.value)}
+						/>
+					</div>
+					<div className="modal-footer">
+						<button className="save-btn" onClick={onEditSave}>
+							保存修改
+						</button>
+						<button className="delete-btn" onClick={onEditCancel}>
+							取消
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
 	</div>
 );
 

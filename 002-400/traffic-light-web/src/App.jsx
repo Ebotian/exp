@@ -28,7 +28,8 @@ function App() {
 		eveningEnd: "19:00",
 	});
 	const [settingsList, setSettingsList] = useState([]);
-	const [editId, setEditId] = useState(null);
+	const [editModalOpen, setEditModalOpen] = useState(false);
+	const [editItem, setEditItem] = useState(null);
 
 	const handleLogin = (username, password) => {
 		connectMQTT({
@@ -90,24 +91,26 @@ function App() {
 	const handleEdit = (id) => {
 		const item = settingsList.find((s) => s.id === id);
 		if (item) {
-			setNorthSouth({
-				red: item.nsRed,
-				green: item.nsGreen,
-				yellow: item.nsYellow,
-			});
-			setEastWest({
-				red: item.ewRed,
-				green: item.ewGreen,
-				yellow: item.ewYellow,
-			});
-			setTimeSettings({
-				morningStart: item.morningStart,
-				morningEnd: item.morningEnd,
-				eveningStart: item.eveningStart,
-				eveningEnd: item.eveningEnd,
-			});
-			setEditId(id);
+			setEditItem(item);
+			setEditModalOpen(true);
 		}
+	};
+
+	const handleEditChange = (key, value) => {
+		setEditItem((prev) => ({ ...prev, [key]: value }));
+	};
+
+	const handleEditSave = () => {
+		setSettingsList((prev) =>
+			prev.map((s) => (s.id === editItem.id ? editItem : s))
+		);
+		setEditModalOpen(false);
+		setEditItem(null);
+	};
+
+	const handleEditCancel = () => {
+		setEditModalOpen(false);
+		setEditItem(null);
 	};
 
 	const handleDelete = (id) => {
@@ -133,6 +136,11 @@ function App() {
 				onEdit={handleEdit}
 				onDelete={handleDelete}
 				onAddSetting={handleAddSetting}
+				editModalOpen={editModalOpen}
+				editItem={editItem}
+				onEditChange={handleEditChange}
+				onEditSave={handleEditSave}
+				onEditCancel={handleEditCancel}
 			/>
 		</div>
 	);
