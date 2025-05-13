@@ -12,6 +12,7 @@ const Dashboard = ({
 	settingsList,
 	onEdit,
 	onDelete,
+	onAddSetting,
 }) => (
 	<div className="dashboard-bg">
 		<header className="dashboard-header">
@@ -30,14 +31,22 @@ const Dashboard = ({
 						value={northSouth.red}
 						onChange={(e) => onSaveLight("northSouth", "red", e.target.value)}
 					/>
-					<button onClick={() => onSaveLight("northSouth", "red")}>保存</button>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("northSouth", "red")}
+					>
+						保存
+					</button>
 					<label>绿灯时长（秒）</label>
 					<input
 						type="number"
 						value={northSouth.green}
 						onChange={(e) => onSaveLight("northSouth", "green", e.target.value)}
 					/>
-					<button onClick={() => onSaveLight("northSouth", "green")}>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("northSouth", "green")}
+					>
 						保存
 					</button>
 					<label>黄灯时长（秒）</label>
@@ -48,7 +57,10 @@ const Dashboard = ({
 							onSaveLight("northSouth", "yellow", e.target.value)
 						}
 					/>
-					<button onClick={() => onSaveLight("northSouth", "yellow")}>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("northSouth", "yellow")}
+					>
 						保存
 					</button>
 				</div>
@@ -60,21 +72,34 @@ const Dashboard = ({
 						value={eastWest.red}
 						onChange={(e) => onSaveLight("eastWest", "red", e.target.value)}
 					/>
-					<button onClick={() => onSaveLight("eastWest", "red")}>保存</button>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("eastWest", "red")}
+					>
+						保存
+					</button>
 					<label>绿灯时长（秒）</label>
 					<input
 						type="number"
 						value={eastWest.green}
 						onChange={(e) => onSaveLight("eastWest", "green", e.target.value)}
 					/>
-					<button onClick={() => onSaveLight("eastWest", "green")}>保存</button>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("eastWest", "green")}
+					>
+						保存
+					</button>
 					<label>黄灯时长（秒）</label>
 					<input
 						type="number"
 						value={eastWest.yellow}
 						onChange={(e) => onSaveLight("eastWest", "yellow", e.target.value)}
 					/>
-					<button onClick={() => onSaveLight("eastWest", "yellow")}>
+					<button
+						className="save-btn"
+						onClick={() => onSaveLight("eastWest", "yellow")}
+					>
 						保存
 					</button>
 				</div>
@@ -105,8 +130,13 @@ const Dashboard = ({
 					value={timeSettings.eveningEnd}
 					onChange={(e) => onTimeChange("eveningEnd", e.target.value)}
 				/>
-				<button onClick={onSaveTime}>保存滞沙时间</button>
+				<button className="save-btn" onClick={onSaveTime}>
+					保存滞沙时间
+				</button>
 			</div>
+			<button className="add-setting-btn" onClick={onAddSetting}>
+				添加当前设置到列表
+			</button>
 			<div className="settings-list">
 				<h3>设置列表</h3>
 				<table>
@@ -141,8 +171,15 @@ const Dashboard = ({
 								<td>{item.eveningStart}</td>
 								<td>{item.eveningEnd}</td>
 								<td>
-									<button onClick={() => onEdit(item.id)}>编辑</button>
-									<button onClick={() => onDelete(item.id)}>删除</button>
+									<button className="edit-btn" onClick={() => onEdit(item.id)}>
+										编辑
+									</button>
+									<button
+										className="delete-btn"
+										onClick={() => onDelete(item.id)}
+									>
+										删除
+									</button>
 								</td>
 							</tr>
 						))}

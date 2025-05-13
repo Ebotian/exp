@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import StatusDisplay from "./components/StatusDisplay";
-import TrafficLightControl from "./components/TrafficLightControl";
 import {
 	connectMQTT,
 	publishControl,
@@ -15,6 +13,22 @@ function App() {
 	const [loggedIn, setLoggedIn] = useState(false);
 	const [status, setStatus] = useState("");
 	const [user, setUser] = useState({ username: "" });
+
+	// 表单相关状态
+	const [northSouth, setNorthSouth] = useState({
+		red: 30,
+		green: 25,
+		yellow: 5,
+	});
+	const [eastWest, setEastWest] = useState({ red: 30, green: 25, yellow: 5 });
+	const [timeSettings, setTimeSettings] = useState({
+		morningStart: "07:00",
+		morningEnd: "09:00",
+		eveningStart: "17:00",
+		eveningEnd: "19:00",
+	});
+	const [settingsList, setSettingsList] = useState([]);
+	const [editId, setEditId] = useState(null);
 
 	const handleLogin = (username, password) => {
 		connectMQTT({
@@ -38,17 +52,88 @@ function App() {
 		publishControl(cmd);
 	};
 
+	// 表单相关逻辑
+	const handleSaveLight = (direction, color, value) => {
+		const v = Number(value);
+		if (direction === "northSouth") {
+			setNorthSouth((prev) => ({ ...prev, [color]: v }));
+		} else {
+			setEastWest((prev) => ({ ...prev, [color]: v }));
+		}
+	};
+
+	const handleTimeChange = (key, value) => {
+		setTimeSettings((prev) => ({ ...prev, [key]: value }));
+	};
+
+	const handleSaveTime = () => {
+		// 可扩展保存逻辑
+	};
+
+	const handleAddSetting = () => {
+		const newSetting = {
+			id: Date.now(),
+			nsRed: northSouth.red,
+			nsGreen: northSouth.green,
+			nsYellow: northSouth.yellow,
+			ewRed: eastWest.red,
+			ewGreen: eastWest.green,
+			ewYellow: eastWest.yellow,
+			morningStart: timeSettings.morningStart,
+			morningEnd: timeSettings.morningEnd,
+			eveningStart: timeSettings.eveningStart,
+			eveningEnd: timeSettings.eveningEnd,
+		};
+		setSettingsList((prev) => [...prev, newSetting]);
+	};
+
+	const handleEdit = (id) => {
+		const item = settingsList.find((s) => s.id === id);
+		if (item) {
+			setNorthSouth({
+				red: item.nsRed,
+				green: item.nsGreen,
+				yellow: item.nsYellow,
+			});
+			setEastWest({
+				red: item.ewRed,
+				green: item.ewGreen,
+				yellow: item.ewYellow,
+			});
+			setTimeSettings({
+				morningStart: item.morningStart,
+				morningEnd: item.morningEnd,
+				eveningStart: item.eveningStart,
+				eveningEnd: item.eveningEnd,
+			});
+			setEditId(id);
+		}
+	};
+
+	const handleDelete = (id) => {
+		setSettingsList((prev) => prev.filter((s) => s.id !== id));
+	};
+
 	if (!loggedIn) {
 		return <Login onLogin={handleLogin} />;
 	}
 
 	return (
 		<div>
-			<button onClick={handleLogout}>退出登录</button>
-			<TrafficLightControl onControl={handleControl} />
-			<StatusDisplay status={status} />
-      {/* 你可以根据需要添加 Dashboard 或其他功能 */}
-      <Dashboard user={user} />
+			<Dashboard
+				user={user}
+				onLogout={handleLogout}
+				northSouth={northSouth}
+				eastWest={eastWest}
+				onSaveLight={handleSaveLight}
+				timeSettings={timeSettings}
+				onTimeChange={handleTimeChange}
+				onSaveTime={handleSaveTime}
+				settingsList={settingsList}
+				onEdit={handleEdit}
+				onDelete={handleDelete}
+				onAddSetting={handleAddSetting}
+			/>
 		</div>
 	);
 }

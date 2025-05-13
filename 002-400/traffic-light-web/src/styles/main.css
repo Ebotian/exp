@@ -108,3 +108,241 @@
 button {
   outline: none;
 }
+
+/* Dashboard表单界面样式 */
+body,
+html {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #f4f8fc;
+  font-family: 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.dashboard-bg {
+  min-height: 100vh;
+  background: #f4f8fc;
+  padding-bottom: 40px;
+}
+
+.dashboard-header {
+  background: #fff;
+  padding: 18px 40px 18px 32px;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #222;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.logout-btn {
+  background: #ff4d4f;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.logout-btn:hover {
+  background: #ff7875;
+}
+
+.dashboard-content {
+  max-width: 1100px;
+  margin: 32px auto 0 auto;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.light-settings {
+  display: flex;
+  gap: 32px;
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.direction-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 24px 32px 18px 32px;
+  min-width: 320px;
+  flex: 1;
+}
+
+.direction-card h3 {
+  margin-top: 0;
+  margin-bottom: 18px;
+  font-size: 1.15rem;
+  color: #1890ff;
+}
+
+.direction-card label {
+  display: block;
+  margin: 10px 0 4px 0;
+  color: #555;
+  font-size: 0.98rem;
+}
+
+.direction-card input[type="number"] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.direction-card button {
+  width: 100%;
+  margin-bottom: 8px;
+  background: #52c41a;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.direction-card button:hover {
+  background: #73d13d;
+}
+
+.time-settings {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 24px 32px 18px 32px;
+  margin-bottom: 32px;
+  width: 100%;
+  max-width: 700px;
+}
+
+.time-settings h3 {
+  margin-top: 0;
+  margin-bottom: 18px;
+  color: #1890ff;
+  font-size: 1.1rem;
+}
+
+.time-settings label {
+  display: block;
+  margin: 10px 0 4px 0;
+  color: #555;
+  font-size: 0.98rem;
+}
+
+.time-settings input[type="time"] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 1rem;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.time-settings button {
+  width: 100%;
+  background: #1890ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 0;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: background 0.2s;
+}
+
+.time-settings button:hover {
+  background: #40a9ff;
+}
+
+.settings-list {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 24px 32px 18px 32px;
+  width: 100%;
+  max-width: 1100px;
+  margin-top: 24px;
+}
+
+.settings-list h3 {
+  margin-top: 0;
+  margin-bottom: 18px;
+  color: #1890ff;
+  font-size: 1.1rem;
+}
+
+.settings-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.98rem;
+  background: #fff;
+}
+
+.settings-list th,
+.settings-list td {
+  border: 1px solid #e8e8e8;
+  padding: 7px 8px;
+  text-align: center;
+}
+
+.settings-list th {
+  background: #f5f7fa;
+  color: #333;
+}
+
+.settings-list tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.settings-list button {
+  background: #1890ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.95rem;
+  margin: 0 2px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.settings-list button:hover {
+  background: #40a9ff;
+}
+
+/* 适配移动端 */
+@media (max-width: 900px) {
+
+  .dashboard-content,
+  .settings-list,
+  .time-settings {
+    max-width: 98vw;
+    padding: 10px;
+  }
+
+  .light-settings {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .direction-card {
+    min-width: unset;
+    width: 100%;
+  }
+}
