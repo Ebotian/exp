@@ -21,6 +21,7 @@ const Dashboard = ({
 	onActivate, // 新增：激活模式的回调
 	activeModeIndex, // 新增：当前激活模式的下标
 	isAdmin, // 新增：是否为管理员
+	status, // 新增：交通灯状态
 }) => (
 	<div className="dashboard-bg">
 		<header className="dashboard-header">
@@ -30,6 +31,18 @@ const Dashboard = ({
 			</button>
 		</header>
 		<div className="dashboard-content">
+			<div className="traffic-status">
+				<div>
+					南北向：
+					<span style={{ color: status.nsColor }}>{status.nsColor}</span>{" "}
+					{status.nsSeconds} 秒
+				</div>
+				<div>
+					东西向：
+					<span style={{ color: status.ewColor }}>{status.ewColor}</span>{" "}
+					{status.ewSeconds} 秒
+				</div>
+			</div>
 			<div className="light-settings">
 				<div className="direction-card">
 					<h3>南北方向</h3>

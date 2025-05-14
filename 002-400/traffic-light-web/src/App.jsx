@@ -11,7 +11,12 @@ const MQTT_HOST = "ws://39.107.106.220:8083/mqtt"; // 使用你的EMQX服务器�
 
 function App() {
 	const [loggedIn, setLoggedIn] = useState(false);
-	const [status, setStatus] = useState("");
+	const [status, setStatus] = useState({
+		nsColor: "red",
+		nsSeconds: 0,
+		ewColor: "green",
+		ewSeconds: 0,
+	});
 	const [user, setUser] = useState({ username: "" });
 
 	const isAdmin = user.username === "admin";
@@ -39,7 +44,7 @@ function App() {
 			host: MQTT_HOST,
 			username,
 			password,
-			onMessage: (msg) => setStatus(msg.status),
+			onMessage: (msg) => setStatus(msg),
 		});
 		setUser({ username });
 		setLoggedIn(true);
@@ -49,7 +54,12 @@ function App() {
 		disconnectMQTT();
 		setLoggedIn(false);
 		setUser({ username: "" });
-		setStatus("");
+		setStatus({
+			nsColor: "red",
+			nsSeconds: 0,
+			ewColor: "green",
+			ewSeconds: 0,
+		});
 	};
 
 	const handleControl = (cmd) => {
@@ -155,7 +165,8 @@ function App() {
 				onEditCancel={handleEditCancel}
 				onActivate={handleActivate}
 				activeModeIndex={activeModeIndex}
-				isAdmin={isAdmin} // 新增
+				isAdmin={isAdmin}
+				status={status} // 新增
 			/>
 		</div>
 	);
