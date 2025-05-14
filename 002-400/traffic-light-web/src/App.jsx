@@ -30,6 +30,7 @@ function App() {
 	const [settingsList, setSettingsList] = useState([]);
 	const [editModalOpen, setEditModalOpen] = useState(false);
 	const [editItem, setEditItem] = useState(null);
+	const [activeModeIndex, setActiveModeIndex] = useState(null); // 当前激活模式下标
 
 	const handleLogin = (username, password) => {
 		connectMQTT({
@@ -117,6 +118,15 @@ function App() {
 		setSettingsList((prev) => prev.filter((s) => s.id !== id));
 	};
 
+	const handleActivate = (idx) => {
+		setActiveModeIndex(idx);
+		// 通过MQTT通知单片机端切换模式
+		const modeSetting = settingsList[idx];
+		if (modeSetting) {
+			publishControl({ type: "set_mode", modeIndex: idx, ...modeSetting });
+		}
+	};
+
 	if (!loggedIn) {
 		return <Login onLogin={handleLogin} />;
 	}
@@ -141,6 +151,8 @@ function App() {
 				onEditChange={handleEditChange}
 				onEditSave={handleEditSave}
 				onEditCancel={handleEditCancel}
+				onActivate={handleActivate} // 新增
+				activeModeIndex={activeModeIndex} // 新增
 			/>
 		</div>
 	);

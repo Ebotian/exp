@@ -18,6 +18,8 @@ const Dashboard = ({
 	onEditChange,
 	onEditSave,
 	onEditCancel,
+	onActivate, // 新增：激活模式的回调
+	activeModeIndex, // 新增：当前激活模式的下标
 }) => (
 	<div className="dashboard-bg">
 		<header className="dashboard-header">
@@ -147,7 +149,7 @@ const Dashboard = ({
 				<table>
 					<thead>
 						<tr>
-							<th>ID</th>
+							<th>模式名称</th>
 							<th>南北红灯</th>
 							<th>南北绿灯</th>
 							<th>南北黄灯</th>
@@ -159,12 +161,16 @@ const Dashboard = ({
 							<th>晚高峰开始</th>
 							<th>晚高峰结束</th>
 							<th>操作</th>
+							<th>激活</th>
 						</tr>
 					</thead>
 					<tbody>
 						{settingsList.map((item, idx) => (
-							<tr key={item.id}>
-								<td>{item.id}</td>
+							<tr
+								key={item.id}
+								className={activeModeIndex === idx ? "active-mode-row" : ""}
+							>
+								<td>{`模式${idx + 1}`}</td>
 								<td>{item.nsRed}</td>
 								<td>{item.nsGreen}</td>
 								<td>{item.nsYellow}</td>
@@ -184,6 +190,15 @@ const Dashboard = ({
 										onClick={() => onDelete(item.id)}
 									>
 										删除
+									</button>
+								</td>
+								<td>
+									<button
+										className="activate-btn"
+										disabled={activeModeIndex === idx}
+										onClick={() => onActivate(idx)}
+									>
+										{activeModeIndex === idx ? "已激活" : "激活"}
 									</button>
 								</td>
 							</tr>
