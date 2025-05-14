@@ -1,8 +1,11 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
   text-align: center;
+  background: #fff;
+  box-shadow: none;
 }
 
 .logo {
@@ -11,9 +14,11 @@
   will-change: filter;
   transition: filter 300ms;
 }
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
 }
+
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
@@ -22,6 +27,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -39,4 +45,92 @@
 
 .read-the-docs {
   color: #888;
+}
+
+.container {
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  background: #fff;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 32px 0 24px 0;
+  font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+}
+
+h1 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 24px;
+  color: #222;
+  letter-spacing: 1px;
+}
+
+.video-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.camera-stream {
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 4/3;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: #f2f2f2;
+  object-fit: cover;
+}
+
+.button-group {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 18px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.button-group button {
+  flex: 1 1 120px;
+  min-width: 100px;
+  padding: 10px 0;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #4f8cff 0%, #38e6c5 100%);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 2px 8px rgba(79, 140, 255, 0.08);
+}
+
+.button-group button:last-child {
+  grid-column: 1 / span 2;
+  justify-self: center;
+  min-width: 160px;
+}
+
+.button-group button:active {
+  transform: scale(0.97);
+}
+
+.button-group button:disabled {
+  background: #b0b0b0;
+  cursor: not-allowed;
+}
+
+.message {
+  text-align: center;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-radius: 6px;
+  background: #f2f8ff;
+  color: #2a5d9f;
+  font-size: 1rem;
+  min-height: 24px;
 }
