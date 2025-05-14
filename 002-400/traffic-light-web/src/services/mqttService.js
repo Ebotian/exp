@@ -3,10 +3,11 @@ import mqtt from "mqtt";
 let client = null;
 
 export function connectMQTT({ host, username, password, onMessage }) {
+	console.log("MQTT connect host:", host); // 调试用
 	client = mqtt.connect(host, {
 		username,
 		password,
-		protocol: "wss",
+		protocol: "ws",
 	});
 
 	client.on("connect", () => {

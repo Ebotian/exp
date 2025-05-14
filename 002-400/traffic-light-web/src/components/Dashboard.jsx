@@ -20,6 +20,7 @@ const Dashboard = ({
 	onEditCancel,
 	onActivate, // 新增：激活模式的回调
 	activeModeIndex, // 新增：当前激活模式的下标
+	isAdmin, // 新增：是否为管理员
 }) => (
 	<div className="dashboard-bg">
 		<header className="dashboard-header">
@@ -36,40 +37,53 @@ const Dashboard = ({
 					<input
 						type="number"
 						value={northSouth.red}
-						onChange={(e) => onSaveLight("northSouth", "red", e.target.value)}
+						onChange={(e) =>
+							isAdmin && onSaveLight("northSouth", "red", e.target.value)
+						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("northSouth", "red")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("northSouth", "red")}
+						>
+							保存
+						</button>
+					)}
 					<label>绿灯时长（秒）</label>
 					<input
 						type="number"
 						value={northSouth.green}
-						onChange={(e) => onSaveLight("northSouth", "green", e.target.value)}
+						onChange={(e) =>
+							isAdmin && onSaveLight("northSouth", "green", e.target.value)
+						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("northSouth", "green")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("northSouth", "green")}
+						>
+							保存
+						</button>
+					)}
 					<label>黄灯时长（秒）</label>
 					<input
 						type="number"
 						value={northSouth.yellow}
 						onChange={(e) =>
-							onSaveLight("northSouth", "yellow", e.target.value)
+							isAdmin && onSaveLight("northSouth", "yellow", e.target.value)
 						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("northSouth", "yellow")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("northSouth", "yellow")}
+						>
+							保存
+						</button>
+					)}
 				</div>
 				<div className="direction-card">
 					<h3>东西方向</h3>
@@ -77,38 +91,53 @@ const Dashboard = ({
 					<input
 						type="number"
 						value={eastWest.red}
-						onChange={(e) => onSaveLight("eastWest", "red", e.target.value)}
+						onChange={(e) =>
+							isAdmin && onSaveLight("eastWest", "red", e.target.value)
+						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("eastWest", "red")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("eastWest", "red")}
+						>
+							保存
+						</button>
+					)}
 					<label>绿灯时长（秒）</label>
 					<input
 						type="number"
 						value={eastWest.green}
-						onChange={(e) => onSaveLight("eastWest", "green", e.target.value)}
+						onChange={(e) =>
+							isAdmin && onSaveLight("eastWest", "green", e.target.value)
+						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("eastWest", "green")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("eastWest", "green")}
+						>
+							保存
+						</button>
+					)}
 					<label>黄灯时长（秒）</label>
 					<input
 						type="number"
 						value={eastWest.yellow}
-						onChange={(e) => onSaveLight("eastWest", "yellow", e.target.value)}
+						onChange={(e) =>
+							isAdmin && onSaveLight("eastWest", "yellow", e.target.value)
+						}
+						readOnly={!isAdmin}
 					/>
-					<button
-						className="save-btn"
-						onClick={() => onSaveLight("eastWest", "yellow")}
-					>
-						保存
-					</button>
+					{isAdmin && (
+						<button
+							className="save-btn"
+							onClick={() => onSaveLight("eastWest", "yellow")}
+						>
+							保存
+						</button>
+					)}
 				</div>
 			</div>
 			<div className="time-settings">
@@ -117,33 +146,49 @@ const Dashboard = ({
 				<input
 					type="time"
 					value={timeSettings.morningStart}
-					onChange={(e) => onTimeChange("morningStart", e.target.value)}
+					onChange={(e) =>
+						isAdmin && onTimeChange("morningStart", e.target.value)
+					}
+					readOnly={!isAdmin}
 				/>
 				<label>早高峰结束时间</label>
 				<input
 					type="time"
 					value={timeSettings.morningEnd}
-					onChange={(e) => onTimeChange("morningEnd", e.target.value)}
+					onChange={(e) =>
+						isAdmin && onTimeChange("morningEnd", e.target.value)
+					}
+					readOnly={!isAdmin}
 				/>
 				<label>晚高峰开始时间</label>
 				<input
 					type="time"
 					value={timeSettings.eveningStart}
-					onChange={(e) => onTimeChange("eveningStart", e.target.value)}
+					onChange={(e) =>
+						isAdmin && onTimeChange("eveningStart", e.target.value)
+					}
+					readOnly={!isAdmin}
 				/>
 				<label>晚高峰结束时间</label>
 				<input
 					type="time"
 					value={timeSettings.eveningEnd}
-					onChange={(e) => onTimeChange("eveningEnd", e.target.value)}
+					onChange={(e) =>
+						isAdmin && onTimeChange("eveningEnd", e.target.value)
+					}
+					readOnly={!isAdmin}
 				/>
-				<button className="save-btn" onClick={onSaveTime}>
-					保存潮汐时间
-				</button>
+				{isAdmin && (
+					<button className="save-btn" onClick={onSaveTime}>
+						保存潮汐时间
+					</button>
+				)}
 			</div>
-			<button className="add-setting-btn" onClick={onAddSetting}>
-				添加当前设置到列表
-			</button>
+			{isAdmin && (
+				<button className="add-setting-btn" onClick={onAddSetting}>
+					添加当前设置到列表
+				</button>
+			)}
 			<div className="settings-list">
 				<h3>设置列表</h3>
 				<table>
@@ -182,24 +227,37 @@ const Dashboard = ({
 								<td>{item.eveningStart}</td>
 								<td>{item.eveningEnd}</td>
 								<td>
-									<button className="edit-btn" onClick={() => onEdit(item.id)}>
-										编辑
-									</button>
-									<button
-										className="delete-btn"
-										onClick={() => onDelete(item.id)}
-									>
-										删除
-									</button>
+									{isAdmin && (
+										<>
+											<button
+												className="edit-btn"
+												onClick={() => onEdit(item.id)}
+											>
+												编辑
+											</button>
+											<button
+												className="delete-btn"
+												onClick={() => onDelete(item.id)}
+											>
+												删除
+											</button>
+										</>
+									)}
 								</td>
 								<td>
-									<button
-										className="activate-btn"
-										disabled={activeModeIndex === idx}
-										onClick={() => onActivate(idx)}
-									>
-										{activeModeIndex === idx ? "已激活" : "激活"}
-									</button>
+									{isAdmin ? (
+										<button
+											disabled={activeModeIndex === idx}
+											onClick={() => onActivate(idx)}
+											className="activate-btn"
+										>
+											{activeModeIndex === idx ? "已激活" : "激活"}
+										</button>
+									) : activeModeIndex === idx ? (
+										"已激活"
+									) : (
+										"-"
+									)}
 								</td>
 							</tr>
 						))}
@@ -207,7 +265,7 @@ const Dashboard = ({
 				</table>
 			</div>
 		</div>
-		{editModalOpen && (
+		{editModalOpen && isAdmin && (
 			<div className="modal-mask">
 				<div className="modal">
 					<div className="modal-header">

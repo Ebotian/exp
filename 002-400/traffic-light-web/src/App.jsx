@@ -7,12 +7,14 @@ import {
 	disconnectMQTT,
 } from "./services/mqttService";
 
-const MQTT_HOST = "wss://your-emqx-server:8084/mqtt"; // 替换为你的EMQX服务器地址
+const MQTT_HOST = "ws://39.107.106.220:8083/mqtt"; // 使用你的EMQX服务器公网IP和端口
 
 function App() {
 	const [loggedIn, setLoggedIn] = useState(false);
 	const [status, setStatus] = useState("");
 	const [user, setUser] = useState({ username: "" });
+
+	const isAdmin = user.username === "admin";
 
 	// 表单相关状态
 	const [northSouth, setNorthSouth] = useState({
@@ -151,8 +153,9 @@ function App() {
 				onEditChange={handleEditChange}
 				onEditSave={handleEditSave}
 				onEditCancel={handleEditCancel}
-				onActivate={handleActivate} // 新增
-				activeModeIndex={activeModeIndex} // 新增
+				onActivate={handleActivate}
+				activeModeIndex={activeModeIndex}
+				isAdmin={isAdmin} // 新增
 			/>
 		</div>
 	);
