@@ -27,6 +27,13 @@ export function publishControl(cmd) {
 	}
 }
 
+// 新增通用 publish 方法
+export function publish(topic, payload) {
+	if (client) {
+		client.publish(topic, payload);
+	}
+}
+
 export function disconnectMQTT() {
 	if (client) {
 		client.end();

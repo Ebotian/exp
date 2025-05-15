@@ -5,6 +5,7 @@ import {
 	connectMQTT,
 	publishControl,
 	disconnectMQTT,
+	publish,
 } from "./services/mqttService";
 
 const MQTT_HOST = "ws://39.107.106.220:8083/mqtt"; // 使用你的EMQX服务器公网IP和端口
@@ -74,6 +75,24 @@ function App() {
 		} else {
 			setEastWest((prev) => ({ ...prev, [color]: v }));
 		}
+		// 实时更新激活项并推送到mqtt
+		const updatedList = settingsList.map((item, idx) =>
+			idx === activeModeIndex
+				? {
+						...item,
+						...(direction === "northSouth"
+							? { [`ns${capitalize(color)}`]: v }
+							: { [`ew${capitalize(color)}`]: v }),
+				  }
+				: item
+		);
+		setSettingsList(updatedList);
+		if (activeModeIndex !== null && updatedList[activeModeIndex]) {
+			publish(
+				"traffic-light/active-setting",
+				JSON.stringify(updatedList[activeModeIndex])
+			);
+		}
 	};
 
 	const handleTimeChange = (key, value) => {
@@ -81,7 +100,25 @@ function App() {
 	};
 
 	const handleSaveTime = () => {
-		// 可扩展保存逻辑
+		// 实时更新激活项并推送到mqtt
+		const updatedList = settingsList.map((item, idx) =>
+			idx === activeModeIndex
+				? {
+						...item,
+						morningStart: timeSettings.morningStart,
+						morningEnd: timeSettings.morningEnd,
+						eveningStart: timeSettings.eveningStart,
+						eveningEnd: timeSettings.eveningEnd,
+				  }
+				: item
+		);
+		setSettingsList(updatedList);
+		if (activeModeIndex !== null && updatedList[activeModeIndex]) {
+			publish(
+				"traffic-light/active-setting",
+				JSON.stringify(updatedList[activeModeIndex])
+			);
+		}
 	};
 
 	const handleAddSetting = () => {
@@ -139,6 +176,10 @@ function App() {
 		}
 	};
 
+	function capitalize(str) {
+		return str.charAt(0).toUpperCase() + str.slice(1);
+	}
+
 	if (!loggedIn) {
 		return <Login onLogin={handleLogin} />;
 	}
@@ -166,7 +207,9 @@ function App() {
 				onActivate={handleActivate}
 				activeModeIndex={activeModeIndex}
 				isAdmin={isAdmin}
-				status={status} // 新增
+				status={status}
+				setSettingsList={setSettingsList}
+				setActiveModeIndex={setActiveModeIndex}
 			/>
 		</div>
 	);

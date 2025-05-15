@@ -121,18 +121,34 @@ void loop() {
   }
 
   // 自动模式
+  static int autoDir = 1; // 1: 左转, -1: 右转
+  static int autoStepSum = 0;
+  static unsigned long lastAutoStepTime = 0;
   if (autoMode) {
-    for (int i = 0; i < AUTO_LEFT_STEPS; i++) {
-      stepLeft(8, AUTO_STEP_DELAY);
-      delay(AUTO_LOOP_DELAY);
-      if (!autoMode) break; // 若中途收到STOP则退出
+    unsigned long now = millis();
+    if (now - lastAutoStepTime >= 1000) { // 每10秒
+      if (autoDir == 1) {
+      for (int i = 0; i < 90; i++) {
+        stepLeft(8, 3);
+      }
+      } else {
+      for (int i = 0; i < 90; i++) {
+        stepRight(8, 3);
+      }
+      }
+      autoStepSum += 30;
+      lastAutoStepTime = now;
+      if (autoStepSum >= 360) {
+        autoDir = -autoDir; // 换方向
+        autoStepSum = 0;
+      }
     }
-    for (int i = 0; i < AUTO_RIGHT_STEPS; i++) {
-      stepRight(8, AUTO_STEP_DELAY);
-      delay(AUTO_LOOP_DELAY);
-      if (!autoMode) break;
+    // 检查是否收到STOP指令
+    if (!autoMode) {
+      stopMotor();
+      autoStepSum = 0;
+      autoDir = 1;
     }
-    lastStepTime = millis();
   }
 }
 
