@@ -23,6 +23,11 @@ const int stepSequence[8][4] = {
   {1, 0, 0, 1}
 };
 
+const int AUTO_LEFT_STEPS = 120;   // 自动模式左转步数
+const int AUTO_RIGHT_STEPS = 120;  // 自动模式右转步数
+const int AUTO_STEP_DELAY = 3;    // 自动模式步进延时(ms)
+const int AUTO_LOOP_DELAY = 3;   // 自动模式每步间隔(ms)
+
 int currentStep = 0;
 bool autoMode = false;
 unsigned long lastStepTime = 0;
@@ -84,19 +89,29 @@ void loop() {
 
   // 按钮控制
   if (digitalRead(BTN1) == LOW) {
-    stepLeft(8, 5); // 加速
+      for (int i = 0; i < 10; i++) {
+        stepLeft(8, 3);
+      }
   } else if (digitalRead(BTN2) == LOW) {
-    stepRight(8, 5);
+      for (int i = 0; i < 10; i++) {
+        stepRight(8, 3);
+      }
   }
 
   // 串口控制
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
+    Serial.print("Received: ");
+    Serial.println(cmd); // 调试用
     if (cmd == "LEFT") {
-      stepLeft(8, 5);
+      for (int i = 0; i < 10; i++) {
+        stepLeft(8, 3);
+      }
     } else if (cmd == "RIGHT") {
-      stepRight(8, 5);
+      for (int i = 0; i < 10; i++) {
+        stepRight(8, 3);
+      }
     } else if (cmd == "STOP") {
       stopMotor();
       autoMode = false;
@@ -106,8 +121,17 @@ void loop() {
   }
 
   // 自动模式
-  if (autoMode && millis() - lastStepTime > autoStepInterval) {
-    stepLeft(1, 5);
+  if (autoMode) {
+    for (int i = 0; i < AUTO_LEFT_STEPS; i++) {
+      stepLeft(8, AUTO_STEP_DELAY);
+      delay(AUTO_LOOP_DELAY);
+      if (!autoMode) break; // 若中途收到STOP则退出
+    }
+    for (int i = 0; i < AUTO_RIGHT_STEPS; i++) {
+      stepRight(8, AUTO_STEP_DELAY);
+      delay(AUTO_LOOP_DELAY);
+      if (!autoMode) break;
+    }
     lastStepTime = millis();
   }
 }
