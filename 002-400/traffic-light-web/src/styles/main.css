@@ -364,6 +364,101 @@ html {
   background: #40a9ff;
 }
 
+/* 默认参数显示表格样式 */
+.default-params-display {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 24px 32px 18px 32px;
+  width: 100%;
+  max-width: 700px;
+  margin: 16px 0;
+}
+
+.default-params-display h3 {
+  margin-top: 0;
+  margin-bottom: 18px;
+  color: #722ed1;
+  font-size: 1.1rem;
+}
+
+.default-params-display table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.98rem;
+  margin-top: 12px;
+}
+
+.default-params-display th,
+.default-params-display td {
+  border: 1px solid #e8e8e8;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.default-params-display th {
+  background: #f9f0ff;
+  color: #333;
+}
+
+.default-params-display tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.default-params-display td:first-child {
+  background: #f9f0ff;
+  font-weight: 500;
+  color: #666;
+}
+
+/* 新增：编辑默认参数保存按钮样式 */
+.save-default-btn {
+  background: #722ed1 !important;
+  color: #fff !important;
+}
+
+.save-default-btn:hover {
+  background: #9254de !important;
+}
+
+/* 新增：开关样式 */
+.mode-switch-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  background: #f5f7fa;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.mode-switch {
+  display: flex;
+  background: #fff;
+  border-radius: 4px;
+  padding: 2px;
+  border: 1px solid #d9d9d9;
+}
+
+.mode-switch button {
+  flex: 1;
+  padding: 6px 16px;
+  border: none;
+  background: none;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.mode-switch button.active {
+  background: #1890ff;
+  color: #fff;
+}
+
 /* 保存提示样式 */
 .save-msg-tip {
   position: fixed;
@@ -502,6 +597,52 @@ html {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 10px;
+}
+
+/* 新增样式 */
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.default-params-btn {
+  flex: 1;
+  background: #1890ff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 0;
+  font-size: 1.05rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.default-params-btn:hover {
+  background: #40a9ff;
+}
+
+.add-setting-btn {
+  flex: 1;
+  width: 100%;
+  background: #faad14;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 0;
+  font-size: 1.05rem;
+  font-weight: bold;
+  margin: 18px 0 0 0;
+  cursor: pointer;
+  transition: background 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.add-setting-btn:hover {
+  background: #ffc53d;
+  color: #333;
 }
 
 /* 适配移动端 */

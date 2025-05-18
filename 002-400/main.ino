@@ -1,340 +1,436 @@
-// ESP32 <-> BC260Y MQTT 通信
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include "premain.h" // 确保这个文件包含了 BC260Y_RX_PIN, BC260Y_TX_PIN, MQTT_TOPIC_CONTROL, MQTT_TOPIC_STATUS, 以及 initializeBC260Y, mqttOpen, mqttConnect, mqttSubscribe, mqttPublish, mqttReconnect 函数的声明或定义
+#include "tr.h"
 
-// --- BC260Y 串口引脚定义 ---
-#define BC260Y_RX_PIN 23 // ESP32 的 RX, 连接到 BC260Y 的 TX
-#define BC260Y_TX_PIN 22 // ESP32 的 TX, 连接到 BC260Y 的 RX
-HardwareSerial bcSerial(2); // 使用 UART2
+// 交通灯参数（可被MQTT动态修改）
+volatile int nsGreen = 15; // 总的南北绿灯时间 (常亮+闪烁)
+volatile int nsYellow = 5;
+volatile int ewGreen = 15; // 总的东西绿灯时间 (常亮+闪烁)
+volatile int ewYellow = 5;
+volatile int modeIndex = 0;
 
-// --- MQTT 参数 ---
-const char* MQTT_BROKER_HOST = "39.107.106.220"; // 您的 EMQX 服务器 IP
-const int MQTT_BROKER_PORT = 1883;             // NB-IoT 标准 MQTT 端口
-const char* MQTT_CLIENT_ID = "esp32-traffic-light-device-01"; // 唯一的客户端 ID
-// 如果您的 EMQX 需要 NB-IoT 连接认证，请填写这些：
-const char* MQTT_USERNAME = ""; // 您的 MQTT 用户名 (如果有)
-const char* MQTT_PASSWORD = ""; // 您的 MQTT 密码 (如果有)
+// 固定参数
+const int FLASH_GREEN_TIME = 3; // 绿灯最后3秒闪烁
+const int RED_TRANSITION_TIME = 2; // 全红过渡时间
 
-const char* MQTT_TOPIC_CONTROL = "trafficlight/control"; // 用于订阅控制指令的主题
-const char* MQTT_TOPIC_STATUS = "trafficlight/status";   // 用于发布状态的主题
-
-// --- 辅助变量 ---
-unsigned long previousMillis = 0;
-const unsigned long atCommandInterval = 10000; // 定期发布状态或检查的间隔时间 (毫秒)
-bool mqttNeedReconnect = false; // MQTT 需要重连标志
-
-// --- MQTT 自动重建函数 ---
-void mqttReconnect() {
-    Serial.println("[重建] 检测到 MQTT 断开，开始自动重建...");
-    sendATCommand("AT+QMTCLOSE=0\r\n", "OK", 3000, false); // 先关闭
-    delay(1000);
-    if (!mqttOpen()) {
-        Serial.println("[重建] QMTOPEN 失败，等待 5 秒后重试...");
-        delay(5000);
+// --- 解析前端下发的set_mode消息 ---
+void handleMqttSetMode(const String& payload) {
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        Serial.print("JSON解析失败: "); Serial.println(err.c_str());
         return;
     }
-    delay(1000);
-    if (!mqttConnect()) {
-        Serial.println("[重建] QMTCONN 失败，等待 5 秒后重试...");
-        delay(5000);
-        return;
+    if (!doc.containsKey("cmd")) return;
+    JsonObject cmd = doc["cmd"];
+    if (!cmd.containsKey("type")) return;
+    String type = cmd["type"];
+    if (type != "set_mode") return;
+
+    if (cmd.containsKey("modeIndex")) modeIndex = cmd["modeIndex"].as<int>();
+
+    if (cmd.containsKey("nsGreen")) {
+        int val = cmd["nsGreen"].as<int>();
+        nsGreen = (val >= 0) ? val : 0; // 确保非负
     }
-    delay(1000);
-    if (!mqttSubscribe()) {
-        Serial.println("[重建] QMTSUB 失败，等待 5 秒后重试...");
-        delay(5000);
-        return;
+    if (cmd.containsKey("nsYellow")) {
+        int val = cmd["nsYellow"].as<int>();
+        nsYellow = (val > 0) ? val : 1; // 确保为正，黄灯至少1秒 (或根据需求改为 (val >=0) ? val : 0)
     }
-    Serial.println("[重建] MQTT 重建完成，恢复正常工作。");
-    mqttNeedReconnect = false;
-    // 可选：重发上线状态
-    mqttPublish(MQTT_TOPIC_STATUS, "{\"status\":\"online\",\"esp32\":\"reconnected\"}");
+    if (cmd.containsKey("ewGreen")) {
+        int val = cmd["ewGreen"].as<int>();
+        ewGreen = (val >= 0) ? val : 0; // 确保非负
+    }
+    if (cmd.containsKey("ewYellow")) {
+        int val = cmd["ewYellow"].as<int>();
+        ewYellow = (val > 0) ? val : 1; // 确保为正，黄灯至少1秒
+    }
+
+    Serial.printf("模式切换: modeIndex=%d nsG=%d nsY=%d ewG=%d ewY=%d\n",
+                  modeIndex, nsGreen, nsYellow, ewGreen, ewYellow);
 }
 
-// 函数：发送AT指令并等待特定响应
-// 如果找到 expectedResponse，则返回 true，否则返回 false
-bool sendATCommand(String command, String expectedResponse, unsigned long timeout, bool printDebug) {
-    String response = "";
-    if (printDebug) {
-        Serial.print("发送: "); // 中文：发送
-        Serial.println(command);
-    }
-    bcSerial.print(command);
-
-    unsigned long startTime = millis();
-    while (millis() - startTime < timeout) {
-        if (bcSerial.available()) {
-            char c = bcSerial.read();
-            response += c;
-        }
-        // 频繁检查当前累积的响应中是否包含预期响应
-        if (response.indexOf(expectedResponse) != -1) {
-            if (printDebug) {
-                Serial.print("收到: "); // 中文：收到
-                Serial.println(response);
+// --- MQTT消息处理 ---
+void handleMqttCommunication() {
+    if (bcSerial.available()) {
+        String data = "";
+        unsigned long readStartTime = millis();
+        while (millis() - readStartTime < 500) {
+            if (bcSerial.available()) {
+                char c = bcSerial.read();
+                data += c;
+                readStartTime = millis();
             }
-            return true;
+        }
+
+        if (data.length() > 0) {
+            Serial.print("串口接收: "); Serial.println(data);
+            if (data.indexOf("+QMTRECV:") != -1) {
+                int topicStart = data.indexOf(",\"") + 2;
+                int topicEnd = data.indexOf("\"", topicStart);
+                if (topicStart < 2 || topicEnd == -1) {
+                    Serial.println("QMTRECV 主题解析失败 (1)");
+                    return;
+                }
+                String topic = data.substring(topicStart, topicEnd);
+
+                int payloadHeaderPos = data.indexOf("\"", topicEnd + 1);
+                if (payloadHeaderPos == -1) {
+                    Serial.println("QMTRECV payload 起始引号未找到");
+                    return;
+                }
+                int payloadStart = payloadHeaderPos + 1;
+                int payloadEnd = -1;
+                for (int i = data.length() - 1; i >= payloadStart; i--) {
+                    if (data.charAt(i) == '"') {
+                        if (i > payloadStart && data.charAt(i-1) == '\\') {
+                            // continue;
+                        } else {
+                            payloadEnd = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (payloadEnd != -1 && payloadEnd > payloadStart) {
+                    String payloadStr = data.substring(payloadStart, payloadEnd);
+                    payloadStr.replace("\\\"", "\"");
+
+                    Serial.print("解析主题: "); Serial.println(topic);
+                    Serial.print("解析Payload: "); Serial.println(payloadStr);
+
+                    if (topic == MQTT_TOPIC_CONTROL) {
+                        handleMqttSetMode(payloadStr);
+                    }
+                } else {
+                    Serial.println("QMTRECV payload 解析失败 (2)");
+                }
+            }
         }
     }
-    if (printDebug) {
-        Serial.print("超时. 收到: "); // 中文：超时. 收到:
-        Serial.println(response);
+    if (mqttNeedReconnect) {
+        mqttReconnect();
     }
-    return false;
 }
 
-// 函数：发送AT指令并获取完整的响应字符串
-String sendATCommandGetResponse(String command, unsigned long timeout, bool printDebug) {
-    String response = "";
-     if (printDebug) {
-        Serial.print("发送: "); // 中文：发送
-        Serial.println(command);
-    }
-    bcSerial.print(command);
-    unsigned long startTime = millis();
-    while (millis() - startTime < timeout) {
-        if (bcSerial.available()) {
-            char c = bcSerial.read();
-            response += c;
+// --- 交通灯状态机 ---
+static int g_phase = 7;
+static int g_countdown = 0;
+static bool g_greenFlashState = true;
+
+void runTrafficLightCycle() {
+    static unsigned long lastFlashToggleMillis = 0;
+    unsigned long currentMillis = millis();
+
+    if (g_countdown <= 0) {
+        g_phase = (g_phase + 1) % 8;
+        lastFlashToggleMillis = currentMillis;
+        g_greenFlashState = true;
+
+        // --- 修正后的绿灯常亮和闪烁时间计算 ---
+        int nsGreenSteadyTimeCalculated;
+        int currentNsFlashTimeCalculated;
+        if (nsGreen <= 0) { // 如果总绿灯时间为0或负
+            nsGreenSteadyTimeCalculated = 0;
+            currentNsFlashTimeCalculated = 0;
+        } else if (nsGreen <= FLASH_GREEN_TIME) { // 如果总绿灯时间小于等于固定闪烁时间
+            nsGreenSteadyTimeCalculated = 0; // 没有常亮时间
+            currentNsFlashTimeCalculated = nsGreen; // 全部为闪烁时间
+        } else { // 正常情况
+            nsGreenSteadyTimeCalculated = nsGreen - FLASH_GREEN_TIME;
+            currentNsFlashTimeCalculated = FLASH_GREEN_TIME;
         }
-    }
-    if (printDebug) {
-        Serial.print("收到: "); // 中文：收到
-        Serial.println(response);
-    }
-    return response;
-}
 
-
-bool initializeBC260Y() {
-    Serial.println("初始化 BC260Y..."); // 中文：初始化 BC260Y...
-    if (!sendATCommand("AT\r\n", "OK", 2000, true)) return false; // 基本检查
-    if (!sendATCommand("ATE0\r\n", "OK", 2000, true)) return false; // 关闭回显，使响应更干净
-    if (!sendATCommand("AT+CFUN=1\r\n", "OK", 5000, true)) return false; // 设置为全功能模式
-    delay(1000); // 给模块一些时间
-    if (!sendATCommand("AT+CPIN?\r\n", "+CPIN: READY", 5000, true)) return false; // 检查SIM卡
-
-    Serial.println("检查网络注册状态..."); // 中文：检查网络注册状态...
-    int retries = 10;
-    bool registered = false;
-    while(retries-- > 0) {
-        String resp = sendATCommandGetResponse("AT+CEREG?\r\n", 3000, true);
-        // 不同模块的第一个参数可能不同
-        if (resp.indexOf("+CEREG: 0,1") != -1 || resp.indexOf("+CEREG: 0,5") != -1 ||
-            resp.indexOf("+CEREG: 1,1") != -1 || resp.indexOf("+CEREG: 1,5") != -1 ||
-            resp.indexOf("+CEREG: 2,1") != -1 || resp.indexOf("+CEREG: 2,5") != -1 ) {
-            Serial.println("网络已注册。"); // 中文：网络已注册。
-            registered = true;
-            break;
+        int ewGreenSteadyTimeCalculated;
+        int currentEwFlashTimeCalculated;
+        if (ewGreen <= 0) {
+            ewGreenSteadyTimeCalculated = 0;
+            currentEwFlashTimeCalculated = 0;
+        } else if (ewGreen <= FLASH_GREEN_TIME) {
+            ewGreenSteadyTimeCalculated = 0;
+            currentEwFlashTimeCalculated = ewGreen;
+        } else {
+            ewGreenSteadyTimeCalculated = ewGreen - FLASH_GREEN_TIME;
+            currentEwFlashTimeCalculated = FLASH_GREEN_TIME;
         }
-        Serial.println("尚未注册，正在重试..."); // 中文：尚未注册，正在重试...
-        delay(3000);
-    }
-    if (!registered) {
-        Serial.println("网络注册失败。"); // 中文：网络注册失败。
-        return false;
-    }
-    // 可选：如果需要，配置APN，尽管BC260Y通常会自动处理
-    // sendATCommand("AT+CGDCONT=1,\"IP\",\"your_apn_here\"\r\n", "OK", 5000, true);
-    return true;
-}
+        // --- 计算结束 ---
 
-bool mqttOpen() {
-    Serial.println("打开 MQTT 客户端实例..."); // 中文：打开 MQTT 客户端实例...
-    String cmd = "AT+QMTOPEN=0,\"" + String(MQTT_BROKER_HOST) + "\"," + String(MQTT_BROKER_PORT) + "\r\n";
-    String response = sendATCommandGetResponse(cmd, 10000, true); // 打开操作可能需要时间
-    // 成功打开的响应是 "+QMTOPEN: 0,0"。如果已打开，可能是 "+QMTOPEN: 0,2"
-    if (response.indexOf("+QMTOPEN: 0,0") != -1 || response.indexOf("+QMTOPEN: 0,2") != -1) {
-        Serial.println("MQTT 客户端实例打开成功 (或已打开)。"); // 中文：MQTT 客户端实例打开成功 (或已打开)。
-        return true;
-    }
-    Serial.println("打开 MQTT 客户端实例失败。"); // 中文：打开 MQTT 客户端实例失败。
-    return false;
-}
-
-bool mqttConnect() {
-    Serial.println("连接到 MQTT 代理..."); // 中文：连接到 MQTT 代理...
-    String cmd = "AT+QMTCONN=0,\"" + String(MQTT_CLIENT_ID) + "\"";
-    if (strlen(MQTT_USERNAME) > 0) {
-        cmd += ",\"" + String(MQTT_USERNAME) + "\"";
-        if (strlen(MQTT_PASSWORD) > 0) {
-            cmd += ",\"" + String(MQTT_PASSWORD) + "\"";
-        }
-    }
-    cmd += "\r\n";
-    String response = sendATCommandGetResponse(cmd, 15000, true); // 连接可能需要较长时间
-    if (response.indexOf("+QMTCONN: 0,0,0") != -1) {
-        Serial.println("成功连接到 MQTT 代理！"); // 中文：成功连接到 MQTT 代理！
-        return true;
-    }
-    Serial.println("连接到 MQTT 代理失败。"); // 中文：连接到 MQTT 代理失败。
-    // 如果连接失败，最好在重试前关闭 QMTOPEN 实例
-    // sendATCommand("AT+QMTCLOSE=0\r\n", "OK", 5000, true);
-    return false;
-}
-
-bool mqttSubscribe() {
-    Serial.println("订阅控制主题..."); // 中文：订阅控制主题...
-    String cmd = "AT+QMTSUB=0,1,\"" + String(MQTT_TOPIC_CONTROL) + "\",1\r\n"; // QoS 1
-    String response = sendATCommandGetResponse(cmd, 5000, true);
-    // 成功订阅的响应: "+QMTSUB: 0,1,0,1" (最后一个1表示QoS 1)
-    if (response.indexOf("+QMTSUB: 0,1,0") != -1) { // 检查主要部分
-        Serial.println("成功订阅主题 " + String(MQTT_TOPIC_CONTROL)); // 中文：成功订阅主题
-        return true;
-    }
-    Serial.println("订阅主题 " + String(MQTT_TOPIC_CONTROL) + " 失败"); // 中文：订阅主题 ... 失败
-    return false;
-}
-
-bool mqttPublish(String topic, String payload) {
-    Serial.println("发布消息..."); // 中文：发布消息...
-    // 构建 AT+QMTPUB 指令头（不包含 payload）
-    String cmd_header = "AT+QMTPUB=0,1,1,0,\"" + topic + "\"\r\n";
-    Serial.print("发送 PUBLISH 头: ");
-    Serial.print(cmd_header);
-    bcSerial.print(cmd_header);
-
-    // 等待 '>' 提示符
-    unsigned long startTime = millis();
-    String response_prompt = "";
-    bool prompt_received = false;
-    while (millis() - startTime < 2000) {
-        if (bcSerial.available()) {
-            char c = bcSerial.read();
-            response_prompt += c;
-            if (response_prompt.endsWith(">")) {
-                prompt_received = true;
-                Serial.println("收到 '>' 提示符.");
+        switch (g_phase) {
+            case 0: // 南北绿灯 (常亮)
+                setTrafficLightPhase("南北绿灯");
+                setNorthSouthRed(false); setNorthSouthYellow(false); setNorthSouthGreen(true);
+                setEastWestRed(true); setEastWestYellow(false); setEastWestGreen(false);
+                g_countdown = nsGreenSteadyTimeCalculated;
                 break;
-            }
+            case 1: // 南北绿灯闪烁
+                setTrafficLightPhase("南北绿灯闪烁");
+                setNorthSouthRed(false); setNorthSouthYellow(false); setNorthSouthGreen(g_greenFlashState);
+                setEastWestRed(true); setEastWestYellow(false); setEastWestGreen(false);
+                g_countdown = currentNsFlashTimeCalculated;
+                break;
+            case 2: // 南北黄灯
+                setTrafficLightPhase("南北黄灯");
+                setNorthSouthRed(false); setNorthSouthYellow(true); setNorthSouthGreen(false);
+                setEastWestRed(true); setEastWestYellow(false); setEastWestGreen(false);
+                g_countdown = nsYellow; // nsYellow 已经过校验
+                break;
+            case 3: // 全红过渡 (南北转东西)
+                setTrafficLightPhase("全红过渡 (NS->EW)");
+                setNorthSouthRed(true); setNorthSouthYellow(false); setNorthSouthGreen(false);
+                setEastWestRed(true); setEastWestYellow(false); setEastWestGreen(false);
+                g_countdown = RED_TRANSITION_TIME;
+                break;
+            case 4: // 东西绿灯 (常亮)
+                setTrafficLightPhase("东西绿灯");
+                setNorthSouthRed(true); setNorthSouthYellow(false); setNorthSouthGreen(false);
+                setEastWestRed(false); setEastWestYellow(false); setEastWestGreen(true);
+                g_countdown = ewGreenSteadyTimeCalculated;
+                break;
+            case 5: // 东西绿灯闪烁
+                setTrafficLightPhase("东西绿灯闪烁");
+                setNorthSouthRed(true); setNorthSouthYellow(false); setNorthSouthGreen(false);
+                setEastWestRed(false); setEastWestYellow(false); setEastWestGreen(g_greenFlashState);
+                g_countdown = currentEwFlashTimeCalculated;
+                break;
+            case 6: // 东西黄灯
+                setTrafficLightPhase("东西黄灯");
+                setNorthSouthRed(true); setNorthSouthYellow(false); setNorthSouthGreen(false);
+                setEastWestRed(false); setEastWestYellow(true); setEastWestGreen(false);
+                g_countdown = ewYellow; // ewYellow 已经过校验
+                break;
+            case 7: // 全红过渡 (东西转南北)
+                setTrafficLightPhase("全红过渡 (EW->NS)");
+                setNorthSouthRed(true); setNorthSouthYellow(false); setNorthSouthGreen(false);
+                setEastWestRed(true); setEastWestYellow(false); setEastWestGreen(false);
+                g_countdown = RED_TRANSITION_TIME;
+                break;
         }
-    }
-    if (!prompt_received) {
-        Serial.println("[错误] 未收到 '>' 提示符。响应: " + response_prompt);
-        mqttNeedReconnect = true;
-        return false;
+        if (g_countdown < 0) g_countdown = 0; // 安全校验，尽管前面逻辑应避免负数
     }
 
-    // 发送 payload
-    Serial.print("发送 Payload: ");
-    Serial.println(payload);
-    bcSerial.print(payload);
-    delay(10);
-    // 发送 CTRL+Z (ASCII 26)
-    Serial.println("发送 CTRL+Z");
-    bcSerial.write(26);
-
-    // 等待最终响应
-    String final_response = "";
-    startTime = millis();
-    unsigned long publishTimeout = 7000;
-    while (millis() - startTime < publishTimeout) {
-        if (bcSerial.available()) {
-            char c = bcSerial.read();
-            final_response += c;
-            if (final_response.indexOf("+QMTPUB: 0,1,0") != -1 || final_response.indexOf("\nOK\r") != -1) {
-                Serial.print("发布结果响应: ");
-                Serial.println(final_response);
-                Serial.println("消息成功发布到主题 " + topic);
-                return true;
-            }
-            if (final_response.indexOf("+QMTPUB: 0,1,2") != -1) {
-                Serial.print("发布结果响应: ");
-                Serial.println(final_response);
-                Serial.println("[错误] QMTPUB 明确报告发送失败 (result=2)。");
-                mqttNeedReconnect = true;
-                return false;
-            }
-            if (final_response.indexOf("ERROR") != -1 || final_response.indexOf("+CME ERROR") != -1) {
-                Serial.print("发布结果响应: ");
-                Serial.println(final_response);
-                Serial.println("[错误] QMTPUB 过程中收到 ERROR。响应: " + final_response);
-                mqttNeedReconnect = true;
-                return false;
-            }
+    // 绿灯闪烁处理
+    if (g_phase == 1) {
+        if (currentMillis - lastFlashToggleMillis >= 500) {
+            g_greenFlashState = !g_greenFlashState;
+            setNorthSouthGreen(g_greenFlashState);
+            lastFlashToggleMillis = currentMillis;
+        }
+    } else if (g_phase == 5) {
+        if (currentMillis - lastFlashToggleMillis >= 500) {
+            g_greenFlashState = !g_greenFlashState;
+            setEastWestGreen(g_greenFlashState);
+            lastFlashToggleMillis = currentMillis;
         }
     }
-    Serial.println("[错误] QMTPUB 等待最终结果超时。当前响应: " + final_response);
-    mqttNeedReconnect = true;
-    return false;
+
+    // --- 数码管显示逻辑 ---
+    // 为了显示一致性，这里也使用与上面相位切换时相同的计算逻辑获取闪烁时间
+    int currentNsFlashTimeForDisplay;
+    if (nsGreen <= 0) currentNsFlashTimeForDisplay = 0;
+    else if (nsGreen <= FLASH_GREEN_TIME) currentNsFlashTimeForDisplay = nsGreen;
+    else currentNsFlashTimeForDisplay = FLASH_GREEN_TIME;
+
+    int currentEwFlashTimeForDisplay;
+    if (ewGreen <= 0) currentEwFlashTimeForDisplay = 0;
+    else if (ewGreen <= FLASH_GREEN_TIME) currentEwFlashTimeForDisplay = ewGreen;
+    else currentEwFlashTimeForDisplay = FLASH_GREEN_TIME;
+
+    int nsDisplayValue = 0;
+    int ewDisplayValue = 0;
+
+    switch (g_phase) {
+        case 0:
+            nsDisplayValue = g_countdown + currentNsFlashTimeForDisplay;
+            showActiveCountdown(nsDisplayValue > 0 ? nsDisplayValue : 0, NORTH_SOUTH_DISPLAY_POS);
+            blankTwoDigits(EAST_WEST_DISPLAY_POS);
+            break;
+        case 1:
+            nsDisplayValue = g_countdown;
+            showActiveCountdown(nsDisplayValue > 0 ? nsDisplayValue : 0, NORTH_SOUTH_DISPLAY_POS);
+            blankTwoDigits(EAST_WEST_DISPLAY_POS);
+            break;
+        case 2:
+            nsDisplayValue = g_countdown;
+            showActiveCountdown(nsDisplayValue > 0 ? nsDisplayValue : 0, NORTH_SOUTH_DISPLAY_POS);
+            blankTwoDigits(EAST_WEST_DISPLAY_POS);
+            break;
+        case 4:
+            ewDisplayValue = g_countdown + currentEwFlashTimeForDisplay;
+            showActiveCountdown(ewDisplayValue > 0 ? ewDisplayValue : 0, EAST_WEST_DISPLAY_POS);
+            blankTwoDigits(NORTH_SOUTH_DISPLAY_POS);
+            break;
+        case 5:
+            ewDisplayValue = g_countdown;
+            showActiveCountdown(ewDisplayValue > 0 ? ewDisplayValue : 0, EAST_WEST_DISPLAY_POS);
+            blankTwoDigits(NORTH_SOUTH_DISPLAY_POS);
+            break;
+        case 6:
+            ewDisplayValue = g_countdown;
+            showActiveCountdown(ewDisplayValue > 0 ? ewDisplayValue : 0, EAST_WEST_DISPLAY_POS);
+            blankTwoDigits(NORTH_SOUTH_DISPLAY_POS);
+            break;
+        case 3:
+        case 7:
+            nsDisplayValue = g_countdown;
+            ewDisplayValue = g_countdown;
+            showActiveCountdown(nsDisplayValue > 0 ? nsDisplayValue : 0, NORTH_SOUTH_DISPLAY_POS);
+            showActiveCountdown(ewDisplayValue > 0 ? ewDisplayValue : 0, EAST_WEST_DISPLAY_POS);
+            break;
+    }
+
+    // 1秒递减倒计时
+    static unsigned long lastTickMillis = 0;
+    if (currentMillis - lastTickMillis >= 1000) {
+        if (g_countdown > 0) {
+            g_countdown--;
+        }
+        lastTickMillis = currentMillis;
+    }
+}
+
+// --- 交通灯硬件初始化 ---
+void setupTrafficLights() {
+    pinMode(NS_RED_PIN, OUTPUT);
+    pinMode(NS_YELLOW_PIN, OUTPUT);
+    pinMode(NS_GREEN_PIN, OUTPUT);
+    pinMode(EW_RED_PIN, OUTPUT);
+    pinMode(EW_YELLOW_PIN, OUTPUT);
+    pinMode(EW_GREEN_PIN, OUTPUT);
+
+    digitalWrite(NS_RED_PIN, HIGH);
+    digitalWrite(NS_YELLOW_PIN, HIGH);
+    digitalWrite(NS_GREEN_PIN, HIGH);
+    digitalWrite(EW_RED_PIN, HIGH);
+    digitalWrite(EW_YELLOW_PIN, HIGH);
+    digitalWrite(EW_GREEN_PIN, HIGH);
+
+    display.setBrightness(0x0f);
+    clearAllDisplays();
 }
 
 void setup() {
-    Serial.begin(115200); // 用于 ESP32 调试
-    bcSerial.begin(9600, SERIAL_8N1, BC260Y_RX_PIN, BC260Y_TX_PIN); // 用于 BC260Y
-    Serial.println("\nESP32 MQTT 客户端 (BC260Y) - Setup 启动"); // 中文：ESP32 MQTT 客户端 (BC260Y) - Setup 启动
-    delay(2000); // 上电后等待模块准备就绪
+    Serial.begin(115200);
+    bcSerial.begin(9600, SERIAL_8N1, BC260Y_RX_PIN, BC260Y_TX_PIN);
+
+    setupTrafficLights();
+
+    Serial.println("系统初始化...");
+    delay(2000);
 
     if (!initializeBC260Y()) {
-        Serial.println("BC260Y 初始化失败。停止运行。"); // 中文：BC260Y 初始化失败。停止运行。
-        while (1); // 停止
+        Serial.println("BC260Y 初始化失败，系统挂起。");
+        while(1) delay(1000);
     }
-
     if (!mqttOpen()) {
-        Serial.println("MQTT 打开失败。重试一次..."); // 中文：MQTT 打开失败。重试一次...
-        sendATCommand("AT+QMTCLOSE=0\r\n", "OK", 3000, false); // 如果处于异常状态，尝试关闭
-        delay(1000);
-        if(!mqttOpen()){
-            Serial.println("MQTT 再次打开失败。停止运行。"); // 中文：MQTT 再次打开失败。停止运行。
-            while (1); // 停止
-        }
+        Serial.println("MQTT 打开失败，系统挂起。");
+        while(1) delay(1000);
     }
-
     if (!mqttConnect()) {
-        Serial.println("MQTT 连接失败。停止运行。"); // 中文：MQTT 连接失败。停止运行。
-        while (1); // 停止
+        Serial.println("MQTT 连接失败，系统挂起。");
+        while(1) delay(1000);
     }
-
     if (!mqttSubscribe()) {
-        Serial.println("MQTT 订阅失败。无订阅继续运行可能会有问题。"); // 中文：MQTT 订阅失败。无订阅继续运行可能会有问题。
-        // 决定是停止还是继续
+        Serial.println("MQTT 订阅失败，系统挂起。");
+        while(1) delay(1000);
     }
 
-    Serial.println("Setup 完成。ESP32 已连接到 MQTT 并已订阅。"); // 中文：Setup 完成。ESP32 已连接到 MQTT 并已订阅。
-    // 示例：发布一个初始状态
-    mqttPublish(MQTT_TOPIC_STATUS, "{\"status\":\"online\",\"esp32\":\"ready\"}"); // 中文：在线，就绪
+    mqttPublish(MQTT_TOPIC_STATUS, "{\"status\":\"online\",\"message\":\"ESP32 Traffic Light Controller Connected\"}");
+    Serial.println("系统准备就绪。");
+    g_countdown = 0;
 }
 
 void loop() {
-    // 检查来自 BC260Y 的传入数据 (例如 MQTT 消息)
-    if (bcSerial.available()) {
-        String data = bcSerial.readString(); // 读取所有可用数据
-        Serial.print("来自 BC260Y 的数据: ");
-        Serial.println(data);
+    handleMqttCommunication();
+    runTrafficLightCycle();
 
-        // --- URC 解析 ---
-        // 1. MQTT 消息
-        if (data.indexOf("+QMTRECV:") != -1) {
-            Serial.println("收到 MQTT 消息！");
-            // TODO: 解析主题和负载，执行交通灯控制
-        }
-        // 2. MQTT 状态异常/断开
-        if (data.indexOf("+QMTSTAT:") != -1 || data.indexOf("+QMTDISC:") != -1 || data.indexOf("+QMTCLOSE:") != -1) {
-            Serial.println("[URC] 检测到 MQTT 断开/异常，设置重连标志。");
-            mqttNeedReconnect = true;
-        }
-        // 3. QMTPUB 失败
-        if (data.indexOf("+QMTPUB:") != -1 && (data.indexOf(",1,1") != -1 || data.indexOf(",1,2") != -1)) {
-            Serial.println("[URC] QMTPUB 失败，设置重连标志。");
-            mqttNeedReconnect = true;
-        }
-        // 4. 其他异常
-        if (data.indexOf("ERROR") != -1 || data.indexOf("+CME ERROR") != -1) {
-            Serial.println("[URC] 检测到 ERROR，设置重连标志。");
-            mqttNeedReconnect = true;
-        }
-    }
-
-    // 检查是否需要重建 MQTT 连接
-    if (mqttNeedReconnect) {
-        mqttReconnect();
-        delay(1000); // 防止重建过快
-        return;
-    }
-
-    // 定期发布状态
+    static unsigned long lastReportMillis = 0;
     unsigned long currentMillis = millis();
-    if (currentMillis - previousMillis >= atCommandInterval) {
-        previousMillis = currentMillis;
-        String statusPayload = "{\"uptime\":" + String(millis()/1000) + ",\"heap\":" + String(ESP.getFreeHeap()) + "}";
-        mqttPublish(MQTT_TOPIC_STATUS, statusPayload);
+
+    if (currentMillis - lastReportMillis >= 1000) {
+        lastReportMillis = currentMillis;
+        StaticJsonDocument<256> doc;
+
+        String nsColorStr = "red";
+        int nsSecondsVal = 0;
+        String ewColorStr = "red";
+        int ewSecondsVal = 0;
+
+        // 为了MQTT上报，再次获取当前相位计算出的闪烁时间
+        int currentNsFlashTimeForReport;
+        if (nsGreen <= 0) currentNsFlashTimeForReport = 0;
+        else if (nsGreen <= FLASH_GREEN_TIME) currentNsFlashTimeForReport = nsGreen;
+        else currentNsFlashTimeForReport = FLASH_GREEN_TIME;
+
+        int currentEwFlashTimeForReport;
+        if (ewGreen <= 0) currentEwFlashTimeForReport = 0;
+        else if (ewGreen <= FLASH_GREEN_TIME) currentEwFlashTimeForReport = ewGreen;
+        else currentEwFlashTimeForReport = FLASH_GREEN_TIME;
+
+
+        switch (g_phase) {
+            case 0:
+                nsColorStr = "green";
+                nsSecondsVal = g_countdown + currentNsFlashTimeForReport;
+                ewColorStr = "red";
+                ewSecondsVal = g_countdown + currentNsFlashTimeForReport + nsYellow + RED_TRANSITION_TIME;
+                break;
+            case 1:
+                nsColorStr = "green";
+                nsSecondsVal = g_countdown;
+                ewColorStr = "red";
+                ewSecondsVal = g_countdown + nsYellow + RED_TRANSITION_TIME;
+                break;
+            case 2:
+                nsColorStr = "yellow";
+                nsSecondsVal = g_countdown;
+                ewColorStr = "red";
+                ewSecondsVal = g_countdown + RED_TRANSITION_TIME;
+                break;
+            case 3:
+                nsColorStr = "red";
+                nsSecondsVal = g_countdown;
+                ewColorStr = "red";
+                ewSecondsVal = g_countdown;
+                break;
+            case 4:
+                ewColorStr = "green";
+                ewSecondsVal = g_countdown + currentEwFlashTimeForReport;
+                nsColorStr = "red";
+                nsSecondsVal = g_countdown + currentEwFlashTimeForReport + ewYellow + RED_TRANSITION_TIME;
+                break;
+            case 5:
+                ewColorStr = "green";
+                ewSecondsVal = g_countdown;
+                nsColorStr = "red";
+                nsSecondsVal = g_countdown + ewYellow + RED_TRANSITION_TIME;
+                break;
+            case 6:
+                ewColorStr = "yellow";
+                ewSecondsVal = g_countdown;
+                nsColorStr = "red";
+                nsSecondsVal = g_countdown + RED_TRANSITION_TIME;
+                break;
+            case 7:
+                nsColorStr = "red";
+                nsSecondsVal = g_countdown;
+                ewColorStr = "red";
+                ewSecondsVal = g_countdown;
+                break;
+        }
+
+        doc["nsColor"] = nsColorStr;
+        doc["nsSeconds"] = nsSecondsVal > 0 ? nsSecondsVal : 0;
+        doc["ewColor"] = ewColorStr;
+        doc["ewSeconds"] = ewSecondsVal > 0 ? ewSecondsVal : 0;
+
+        char jsonBuffer[256];
+        size_t n = serializeJson(doc, jsonBuffer);
+        if (n > 0 && n < sizeof(jsonBuffer)) {
+            mqttPublish(MQTT_TOPIC_STATUS, String(jsonBuffer));
+        } else {
+            Serial.println("JSON序列化失败或缓冲区不足");
+        }
     }
+    delay(10);
 }
