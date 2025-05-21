@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import {
@@ -39,6 +39,88 @@ function App() {
 	const [editModalOpen, setEditModalOpen] = useState(false);
 	const [editItem, setEditItem] = useState(null);
 	const [activeModeIndex, setActiveModeIndex] = useState(null); // 当前激活模式下标
+
+	// 读取本地存储
+	useEffect(() => {
+		const savedSettingsList = localStorage.getItem("settingsList");
+		const savedTimeSettings = localStorage.getItem("timeSettings");
+		const savedNorthSouth = localStorage.getItem("northSouth");
+		const savedEastWest = localStorage.getItem("eastWest");
+		const savedActiveModeIndex = localStorage.getItem("activeModeIndex");
+
+		if (savedSettingsList) setSettingsList(JSON.parse(savedSettingsList));
+		if (savedTimeSettings) setTimeSettings(JSON.parse(savedTimeSettings));
+		if (savedNorthSouth) setNorthSouth(JSON.parse(savedNorthSouth));
+		if (savedEastWest) setEastWest(JSON.parse(savedEastWest));
+		if (savedActiveModeIndex) setActiveModeIndex(Number(savedActiveModeIndex));
+	}, []);
+
+	// 读取云端数据
+	useEffect(() => {
+		if (user.username) {
+			fetch(`/api/user/settings?username=${user.username}`)
+				.then((res) => res.json())
+				.then((res) => {
+					if (res.success && res.data) {
+						if (res.data.settingsList) setSettingsList(res.data.settingsList);
+						if (res.data.timeSettings) setTimeSettings(res.data.timeSettings);
+						if (res.data.northSouth) setNorthSouth(res.data.northSouth);
+						if (res.data.eastWest) setEastWest(res.data.eastWest);
+						if (res.data.activeModeIndex !== undefined)
+							setActiveModeIndex(res.data.activeModeIndex);
+					}
+				});
+		}
+		// eslint-disable-next-line
+	}, [user.username]);
+
+	// 保存到本地存储
+	useEffect(() => {
+		localStorage.setItem("settingsList", JSON.stringify(settingsList));
+	}, [settingsList]);
+	useEffect(() => {
+		localStorage.setItem("timeSettings", JSON.stringify(timeSettings));
+	}, [timeSettings]);
+	useEffect(() => {
+		localStorage.setItem("northSouth", JSON.stringify(northSouth));
+	}, [northSouth]);
+	useEffect(() => {
+		localStorage.setItem("eastWest", JSON.stringify(eastWest));
+	}, [eastWest]);
+	useEffect(() => {
+		localStorage.setItem(
+			"activeModeIndex",
+			activeModeIndex !== null ? String(activeModeIndex) : ""
+		);
+	}, [activeModeIndex]);
+
+	// 保存到云端
+	useEffect(() => {
+		if (user.username) {
+			fetch("/api/user/settings", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					username: user.username,
+					settings: {
+						settingsList,
+						timeSettings,
+						northSouth,
+						eastWest,
+						activeModeIndex,
+					},
+				}),
+			});
+		}
+		// eslint-disable-next-line
+	}, [
+		settingsList,
+		timeSettings,
+		northSouth,
+		eastWest,
+		activeModeIndex,
+		user.username,
+	]);
 
 	const handleLogin = (username, password) => {
 		connectMQTT({
