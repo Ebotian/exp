@@ -1,0 +1,123 @@
+/* filepath: hc25_fullstack_control/frontend/src/App.css */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  margin: 0;
+  padding: 20px;
+  background-color: #f0f2f5;
+  color: #333;
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1, h2 {
+  color: #1890ff;
+}
+
+.status-panel, .control-panel, .history-panel {
+  margin-bottom: 30px;
+  padding: 15px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+}
+
+.status-panel p {
+  margin: 5px 0;
+}
+
+.connected {
+  color: green;
+  font-weight: bold;
+}
+
+.disconnected {
+  color: red;
+  font-weight: bold;
+}
+
+.control-button {
+  background-color: #1890ff;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  margin: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.3s;
+}
+
+.control-button:hover {
+  background-color: #40a9ff;
+}
+
+.control-button:disabled {
+  background-color: #d9d9d9;
+  cursor: not-allowed;
+}
+
+.status-message {
+  padding: 10px;
+  margin-top: 15px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.status-message.success {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #52c41a;
+}
+
+.status-message.error {
+  background-color: #fff1f0;
+  border: 1px solid #ffa39e;
+  color: #f5222d;
+}
+
+.history-panel ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.history-item {
+  padding: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.9em;
+}
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item .timestamp {
+  color: #888;
+  margin-right: 10px;
+  min-width: 150px;
+  display: inline-block;
+}
+.history-item .char-sent {
+  font-weight: bold;
+  margin-right: 10px;
+}
+.history-item .message {
+  color: #555;
+}
+.history-item.success .message {
+  /* color: #52c41a; */
+}
+.history-item.error .message {
+   color: #f5222d;
+}
+.history-item.info .message {
+  color: #1890ff;
+}
+.history-item.warning .message {
+  color: #faad14;
+}
