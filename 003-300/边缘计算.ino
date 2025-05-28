@@ -1,7 +1,7 @@
 // ESP32边缘计算原型：本地关键词检测+云端ASR混合（极简）
 // 只识别“开灯”“关灯”命令，控制GPIO输出
-#include <WiFi.h>
 #include "driver/i2s.h"
+#include <WiFi.h>
 
 // WiFi参数
 const char *ssid = "Nicolette86132";
@@ -38,7 +38,7 @@ void setup() {
 bool is_voice_detected() {
   uint32_t sum = 0;
   for (int i = 0; i < PCM_BYTES; i += 2) {
-    int16_t sample = audio_buffer[i] | (audio_buffer[i+1] << 8);
+    int16_t sample = audio_buffer[i] | (audio_buffer[i + 1] << 8);
     sum += abs(sample);
   }
   return sum / (PCM_BYTES / 2) > 500;

@@ -1,0 +1,15 @@
+CompileFlags:
+  # clangd 从这里拿 compile_commands.json
+  CompilationDatabase: build/compile_commands.json
+
+  # 插入本机 triple，覆盖 xtensa-esp32-unknown-elf
+  Add: ["-target", "x86_64-unknown-linux-gnu"]
+
+  # 删除所有 clangd 不认识的编译选项
+  Remove: [
+    "-mlongcalls",
+    "-mrecord-mcount",
+    "-fno-shrink-wrap",
+    "-fstrict-volatile-bitfields",
+    "-fno-tree-switch-conversion"
+  ]
