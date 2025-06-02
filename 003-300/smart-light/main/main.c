@@ -15,15 +15,14 @@
 
 void app_main(void) {
   display_init();
-  // 初始化 WiFi 并连接
+  // 初始化 WiFi 并连接（不再强制等待连接）
   wifi_init();
-  while (!wifi_is_connected()) {
-    printf("Waiting for WiFi...\n");
-    display_show_text("Waiting WiFi...");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-  }
-  printf("WiFi connected, IP: %s\n", wifi_get_ip());
-  display_show_text(wifi_get_ip());
+  // 直接显示WiFi状态，不等待
+  display_show_text("Init WiFi...");
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  printf("WiFi status: %s\n",
+         wifi_is_connected() ? wifi_get_ip() : "Not connected");
+  display_show_text(wifi_is_connected() ? wifi_get_ip() : "WiFi N/A");
   vTaskDelay(pdMS_TO_TICKS(2000));
 
   // 启动TCP客户端，连接服务器 39.107.106.220:9000
@@ -45,130 +44,101 @@ void app_main(void) {
     localtime_r(&now, &timeinfo);
   }
 
-  // 初始化 PIR
   pir_init();
-  // 初始化板载LED (GPIO2)
   gpio_config_t led_conf = {.pin_bit_mask = 1ULL << GPIO_NUM_2,
                             .mode = GPIO_MODE_OUTPUT,
                             .pull_up_en = GPIO_PULLUP_DISABLE,
                             .pull_down_en = GPIO_PULLDOWN_DISABLE,
                             .intr_type = GPIO_INTR_DISABLE};
   gpio_config(&led_conf);
-  // 初始化 LDR
   ldr_init();
-  // 初始化 WS2812
   ws2812_init();
-  // 启动 HTTP WebServer
   start_webserver();
-
-  // 设置上海时区
   setenv("TZ", "CST-8", 1);
   tzset();
-
-  // 启动语音识别任务
   xTaskCreate(voice_task, "voice_task", 4096, NULL, 5, NULL);
 
-  // 主循环：PIR+LDR 联动自动控制灯带和板载LED
   char time_str[32];
   char light_str[32];
+  // 新增：统一灯状态变量
+  bool led_on = false;
+  int led_brightness = 0;
+  int led_r = 0, led_g = 0, led_b = 0;
+  bool last_led_on = false;
+  int last_led_brightness = -1;
+  int last_led_r = -1, last_led_g = -1, last_led_b = -1;
+
   while (1) {
+    // 1. 读取所有输入
     bool remote_power_on = false;
     bool remote_commanded_power_this_session = false;
     bool voice_on = false;
     bool voice_valid = false;
+    bool pir_on = pir_detected();
+    int light = ldr_read();
     voice_get_light_state(&voice_on, &voice_valid);
-
+    bool remote_available = false;
     if (tcp_client_is_connected()) {
       remote_power_on = tcp_client_get_power_state_from_remote(
           &remote_commanded_power_this_session);
-      if (remote_commanded_power_this_session && remote_power_on) {
-        // 远程指令开灯，优先级最高
-        tcp_client_apply_current_led_settings();
-        vTaskDelay(pdMS_TO_TICKS(500));
-        continue;
-      }
+      remote_available = remote_commanded_power_this_session;
     }
 
-    // 语音优先级高于自动，低于网页
-    if (voice_valid) {
-      if (voice_on) {
-        for (int i = 0; i < 30; ++i)
-          ws2812_set_pixel(i, 255, 255, 255);
-        ws2812_show();
-        gpio_set_level(GPIO_NUM_2, 1);
+    // 2. 处理优先级平等：谁最后有新指令就用谁的
+    // 优先顺序：远程>语音>自动 变为 并列，谁有新指令就用谁
+    // 检查远程
+    if (remote_available) {
+      led_on = remote_power_on;
+      led_brightness = remote_power_on ? 255 : 0;
+      led_r = led_g = led_b = remote_power_on ? 255 : 0;
+    } else if (voice_valid) {
+      led_on = voice_on;
+      led_brightness = voice_on ? 255 : 0;
+      led_r = led_g = led_b = voice_on ? 255 : 0;
+    } else if (pir_on) {
+      // 自动模式
+      if (light < 200) {
+        led_on = true;
+        led_brightness = 255 - (light * 255 / 400);
+        if (led_brightness < 50)
+          led_brightness = 50;
+        if (led_brightness > 255)
+          led_brightness = 255;
+        led_r = led_g = led_b = led_brightness;
       } else {
-        for (int i = 0; i < 30; ++i)
-          ws2812_set_pixel(i, 0, 0, 0);
-        ws2812_show();
-        gpio_set_level(GPIO_NUM_2, 0);
+        led_on = true;
+        led_brightness = 10;
+        led_r = led_g = led_b = 10;
       }
-      vTaskDelay(pdMS_TO_TICKS(500));
-      continue;
+    } else {
+      // 无人
+      led_on = false;
+      led_brightness = 0;
+      led_r = led_g = led_b = 0;
     }
 
-    // 获取当前时间
+    // 3. 应用灯状态（只有变化时才操作）
+    if (led_on != last_led_on || led_brightness != last_led_brightness ||
+        led_r != last_led_r || led_g != last_led_g || led_b != last_led_b) {
+      for (int i = 0; i < 30; ++i)
+        ws2812_set_pixel(i, led_r, led_g, led_b);
+      ws2812_show();
+      gpio_set_level(GPIO_NUM_2, led_on ? 1 : 0);
+      last_led_on = led_on;
+      last_led_brightness = led_brightness;
+      last_led_r = led_r;
+      last_led_g = led_g;
+      last_led_b = led_b;
+    }
+
+    // 显示信息
     time_t now = time(NULL);
     struct tm tm_info;
     localtime_r(&now, &tm_info);
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_info);
-    // 读取光强
-    int light = ldr_read();
     snprintf(light_str, sizeof(light_str), "Light: %d", light);
     display_show_2lines(time_str, light_str);
 
-    // 自动模式逻辑
-    if (pir_detected()) {
-      gpio_set_level(GPIO_NUM_2, 1); // 有人，点亮板载LED
-      if (light < 200) {             // 光强较暗
-        // 如果远程没有明确关灯，则执行自动开灯
-        if (!(tcp_client_is_connected() &&
-              remote_commanded_power_this_session && !remote_power_on)) {
-          int brightness = 255 - (light * 255 / 400);
-          if (brightness < 50)
-            brightness = 50;
-          if (brightness > 255)
-            brightness = 255;
-          for (int i = 0; i < 30; ++i)
-            ws2812_set_pixel(i, brightness, brightness, brightness); // 自动白光
-          ws2812_show();
-        } else {
-          // 远程明确关灯，即使自动条件满足，灯也保持关闭 (或远程设置的状态)
-          tcp_client_apply_current_led_settings(); // 确保应用远程的关闭状态
-        }
-      } else { // 光强足够
-        // 如果远程没有明确关灯，则执行自动调暗
-        if (!(tcp_client_is_connected() &&
-              remote_commanded_power_this_session && !remote_power_on)) {
-          for (int i = 0; i < 30; ++i)
-            ws2812_set_pixel(i, 10, 10, 10); // 自动微亮
-          ws2812_show();
-        } else {
-          // 远程明确关灯
-          tcp_client_apply_current_led_settings();
-        }
-      }
-    } else {                         // 无人
-      gpio_set_level(GPIO_NUM_2, 0); // 无人，熄灭板载LED
-      // 如果远程没有明确关灯，则执行自动关灯
-      if (!(tcp_client_is_connected() && remote_commanded_power_this_session &&
-            !remote_power_on)) {
-        for (int i = 0; i < 30; ++i)
-          ws2812_set_pixel(i, 0, 0, 0); // 自动关闭灯带
-        ws2812_show();
-      } else {
-        // 远程明确关灯
-        tcp_client_apply_current_led_settings();
-      }
-    }
-
-    // 如果TCP已连接，但没有收到过明确的电源命令，或者收到了明确的关灯命令，
-    // 并且自动逻辑也没有操作灯（比如无人或光线强且远程关），
-    // 确保应用远程的（可能是关闭）状态。
-    if (tcp_client_is_connected() && remote_commanded_power_this_session &&
-        !remote_power_on) {
-      tcp_client_apply_current_led_settings();
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
