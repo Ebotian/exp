@@ -45,9 +45,35 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
+/*
+ * 硬件连接配置：
+ * =====================================
+ * 信号输出：
+ * - A1 (TOD)    : TOD信号输出 (160ms前导 + 160ms数据段)
+ * - A4 (PPS)    : 1PPS PWM信号输出 (TIM3_CH2, 100ms高电平/900ms低电平)
+ *
+ * 信号输入（用于COMPOSITE合成）：
+ * - A2 (TOD_IN) : 连接到A1，接收TOD信号
+ * - A3 (PPS_IN) : 连接到A4，接收PPS信号
+ *
+ * 合成输出（严格时分复用）：
+ * - B0 (COMPOSITE): 1PPS+TOD合成信号输出，用于LVDS传输
+ *   规则：
+ *   1. PPS_IN高电平期间(100ms)：COMPOSITE固定输出高电平
+ *   2. PPS_IN低电平期间(900ms)：
+ *      - TOD传输期间(320ms)：输出TOD_IN信号(160ms前导+160ms数据)
+ *      - TOD空闲期间(580ms)：输出高电平
+ *   3. 总结：COMPOSITE = PPS_IN高电平 OR (PPS_IN低电平 AND TOD传输) OR
+ * 空闲高电平
+ *
+ * 调试输出：
+ * - B9 (DEBUG_LED): 状态指示LED (TOD传输时亮，空闲时灭)
+ * =====================================
+ */
+
 #define PREAMBLE_MS 150 // 前导码时长 (ms)
 #define TOD_BYTE_COUNT 20
-static uint8_t in_preamble = 1; // 当前是否在前导码阶段
+static uint8_t in_preamble = 1;         // 当前是否在前导码阶段
 static uint16_t preamble_ms_count = 0;  // 前导码时长计数 (ms)
 static uint16_t preamble_half_tick = 0; // 半比特切换计数
 // Manchester 编码参数定义
@@ -66,6 +92,45 @@ static uint8_t ser_bits[TOD_BYTE_COUNT * 10];
 static uint16_t ser_len = 0, ser_idx = 0;
 static uint16_t ms_since_pps = 0;
 static uint8_t prev_pps = 0;
+
+// TOD信号输出状态机
+// 状态定义
+typedef enum {
+  TOD_IDLE = 0, // 空闲高电平
+  TOD_PREAMBLE, // 前导低电平
+  TOD_DATA      // 数据段（8N1格式）
+} TOD_State_t;
+
+static TOD_State_t tod_state = TOD_IDLE;
+static uint16_t tod_ms_count = 0;
+static uint16_t tod_bit_idx = 0;
+static uint8_t tod_bits[TOD_BYTE_COUNT * 10]; // 8N1格式bit流
+static uint16_t tod_bits_len = 0;
+
+// COMPOSITE合成输出状态机变量
+static uint8_t composite_state = 0; // 0=空闲, 1=前导, 2=数据
+static uint16_t composite_ms_count = 0;
+
+// COMPOSITE信号调试变量
+static uint32_t composite_high_count = 0; // COMPOSITE输出高电平的次数
+static uint32_t composite_low_count = 0;  // COMPOSITE输出TOD信号的次数
+static uint8_t last_composite_state =
+    0; // 上次COMPOSITE状态: 0=初始, 1=高电平, 2=TOD传输
+
+// 曼彻斯特编码时隙指示
+static uint8_t manchester_slot = 0;
+
+// 构建TOD帧的8N1格式bit流
+static void Build_TOD_Bits(void) {
+  tod_bits_len = 0;
+  for (uint8_t i = 0; i < TOD_BYTE_COUNT; i++) {
+    tod_bits[tod_bits_len++] = 0; // start bit
+    for (uint8_t b = 0; b < 8; b++)
+      tod_bits[tod_bits_len++] = (tod_frame[i] >> b) & 1;
+    tod_bits[tod_bits_len++] = 1; // stop bit
+  }
+}
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,7 +139,10 @@ static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
-
+// 硬件连接测试函数 - 检查PPS_IN和TOD_IN是否正确连接
+static uint8_t Test_Hardware_Connections(void);
+// COMPOSITE信号合成处理函数 - 在主循环中调用
+static void Process_Composite_Signal(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -91,6 +159,8 @@ int main(void) {
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
+  // 强制拉高PB0（COMPOSITE）测试输出
+  HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin, GPIO_PIN_SET);
   HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
   for (volatile uint32_t d = 0; d < 1000000; d++)
     ; // 大约 50ms～100ms
@@ -101,19 +171,27 @@ int main(void) {
   for (volatile uint32_t d = 0; d < 1000000; d++)
     ; // 大约 50ms～100ms
   // TOD 中断
-  MX_TIM2_Init();
-  //---- 新增 NVIC 使能 TIM2 ----
+  MX_TIM2_Init(); //---- 新增 NVIC 使能 TIM2 ----
   HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(TIM2_IRQn);
-  //---- 结束 ----
+  //---- 启动 TIM2 中断计时器 ----
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
   for (volatile uint32_t d = 0; d < 1000000; d++)
     ; // 大约 50ms～100ms
   while (1) {
-    // 调试灯翻转
-    HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
-    HAL_Delay(200);
+    // COMPOSITE信号合成处理 - 严格时分复用（1PPS+TOD规范）
+    Process_Composite_Signal();
+
+    // 调试灯翻转（使用计数器降低频率）
+    static uint32_t debug_led_counter = 0;
+    if (++debug_led_counter >= 1000000) { // 大约1秒翻转一次
+      debug_led_counter = 0;
+      HAL_GPIO_TogglePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin);
+    }
+
+    // 短暂延时避免CPU占用过高，但保持足够的响应速度
+    HAL_Delay(1); // 1ms延时，保证COMPOSITE信号及时响应
   }
 }
 
@@ -280,7 +358,6 @@ static void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(DEBUG_LED_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pin : COMPOSITE_Pin */
   GPIO_InitStruct.Pin = COMPOSITE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -288,12 +365,58 @@ static void MX_GPIO_Init(void) {
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(COMPOSITE_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : TOD_IN_Pin and PPS_IN_Pin */
+  GPIO_InitStruct.Pin = TOD_IN_Pin | PPS_IN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+// 硬件连接测试函数 - 检查PPS_IN和TOD_IN是否正确连接
+static uint8_t Test_Hardware_Connections(void) {
+  static uint8_t test_count = 0;
+  static uint8_t connection_ok = 1;
+
+  // 每100ms检查一次连接状态
+  if (++test_count >= 100) {
+    test_count = 0;
+
+    // 读取输出信号状态
+    uint8_t pps_out = HAL_GPIO_ReadPin(PPS_GPIO_Port, PPS_Pin);
+    uint8_t tod_out = HAL_GPIO_ReadPin(TOD_GPIO_Port, TOD_Pin);
+
+    // 读取输入信号状态
+    uint8_t pps_in = HAL_GPIO_ReadPin(PPS_IN_GPIO_Port, PPS_IN_Pin);
+    uint8_t tod_in = HAL_GPIO_ReadPin(TOD_IN_GPIO_Port, TOD_IN_Pin);
+
+    // 检查连接是否正确
+    if (pps_out != pps_in || tod_out != tod_in) {
+      connection_ok = 0; // 连接异常
+    } else {
+      connection_ok = 1; // 连接正常
+    }
+  }
+  return connection_ok;
+}
+
+// COMPOSITE信号合成处理函数 - 严格时分复用（1PPS+TOD规范合成方式）
+static void Process_Composite_Signal(void) {
+  uint8_t pps_in = HAL_GPIO_ReadPin(PPS_IN_GPIO_Port, PPS_IN_Pin);
+  if (pps_in == GPIO_PIN_SET) {
+    // PPS_IN高，PB0高
+    HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin, GPIO_PIN_SET);
+  } else {
+    // PPS_IN低，PB0跟随TOD_IN
+    uint8_t tod_in = HAL_GPIO_ReadPin(TOD_IN_GPIO_Port, TOD_IN_Pin);
+    HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin, tod_in);
+  }
+}
+
 // Manchester 编码输出函数
 static void Manchester_Update(void) {
   if (++man_tick >= MANCHESTER_HALF_MS) {
@@ -312,60 +435,92 @@ static void Manchester_Update(void) {
   }
 }
 
-// TIM2每1ms中断：优先输出前导码50%方波，完成后切入Manchester编码，PPS由TIM3
-// PWM输出
+// TIM2每1ms中断：TOD信号输出状态机
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   if (htim->Instance == TIM2) {
     // 读取PPS状态
     uint8_t pps = (HAL_GPIO_ReadPin(PPS_GPIO_Port, PPS_Pin) == GPIO_PIN_SET);
-    ms_since_pps = (ms_since_pps + 1) % 1000;
 
-    // TOD串口仿真：PPS上升沿后发送一帧
+    // 检测PPS上升沿，重置计时器
     if (pps && !prev_pps) {
-      ser_len = 0;
-      for (uint8_t i = 0; i < TOD_BYTE_COUNT; i++) {
-        ser_bits[ser_len++] = 0; // start bit
-        for (uint8_t b = 0; b < 8; b++)
-          ser_bits[ser_len++] = (tod_frame[i] >> b) & 1;
-        ser_bits[ser_len++] = 1; // stop bit
+      ms_since_pps = 0;
+    } else {
+      ms_since_pps = (ms_since_pps + 1) % 1000;
+    }
+
+    // TOD信号状态机
+    switch (tod_state) {
+    case TOD_IDLE:
+      HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin, GPIO_PIN_SET); // 高电平
+      HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin,
+                        GPIO_PIN_RESET); // 空闲时LED灭
+      if (pps && !prev_pps) {
+        // PPS上升沿，启动前导
+        tod_state = TOD_PREAMBLE;
+        tod_ms_count = 0;
+        tod_bit_idx = 0;
+        Build_TOD_Bits();
       }
-      ser_idx = 0;
+      break;
+    case TOD_PREAMBLE:
+      HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin, GPIO_PIN_RESET); // 低电平
+      HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin,
+                        GPIO_PIN_SET); // 前导/数据时LED亮
+      if (++tod_ms_count >= 160) {
+        tod_state = TOD_DATA;
+        tod_ms_count = 0;
+      }
+      break;
+    case TOD_DATA:
+      // 输出数据段（8N1格式，每bit 160ms/数据位数）
+      if (tod_bit_idx < tod_bits_len) {
+        // 数据段总时长160ms，均分每bit
+        uint16_t bit_time = 160 / tod_bits_len;
+        if (bit_time == 0)
+          bit_time = 1; // 防止bit_time为0
+        if (tod_ms_count % bit_time == 0) {
+          HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin,
+                            tod_bits[tod_bit_idx] ? GPIO_PIN_SET
+                                                  : GPIO_PIN_RESET);
+          tod_bit_idx++;
+        }
+        tod_ms_count++;
+      } else {
+        // 数据段结束，回到空闲
+        HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(DEBUG_LED_GPIO_Port, DEBUG_LED_Pin,
+                          GPIO_PIN_RESET); // 回到空闲LED灭
+        tod_state = TOD_IDLE;
+      }
+      break;
     }
     prev_pps = pps;
 
-    // 只在PPS低电平期间输出TOD，PPS高电平期间TOD线保持高
-    if (!pps && ser_idx < ser_len) {
-      HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin,
-                        ser_bits[ser_idx++] ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    } else {
-      HAL_GPIO_WritePin(TOD_GPIO_Port, TOD_Pin, GPIO_PIN_SET);
-    }
+    // 硬件连接测试
+    uint8_t hw_connection_ok = Test_Hardware_Connections();
 
-    // 前导码/曼彻斯特编码输出到COMPOSITE（可选：如需合成信号）
-    if (in_preamble) {
-      // 前导码阶段：50%占空比方波
-      if (++preamble_half_tick >= MANCHESTER_HALF_MS) {
-        preamble_half_tick = 0;
-        HAL_GPIO_TogglePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin);
-      }
-      if (++preamble_ms_count >= PREAMBLE_MS) {
-        in_preamble = 0;
-        preamble_ms_count = 0;
-        bit_index = 0;
-        man_tick = 0;
-        man_half = 0;
-      }
-    } else {
-      // 数据段：Manchester编码
-      Manchester_Update();
+    // --- 合成信号曼彻斯特编码+时隙复用输出 ---
+    uint8_t tod = HAL_GPIO_ReadPin(TOD_IN_GPIO_Port, TOD_IN_Pin);
+    uint8_t ppsin = HAL_GPIO_ReadPin(PPS_IN_GPIO_Port, PPS_IN_Pin);
+    switch (manchester_slot) {
+    case 0: // TOD_IN曼彻斯特前半
+      HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin,
+                        tod ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      break;
+    case 1: // TOD_IN曼彻斯特后半
+      HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin,
+                        tod ? GPIO_PIN_RESET : GPIO_PIN_SET);
+      break;
+    case 2: // PPS_IN曼彻斯特前半
+      HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin,
+                        ppsin ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      break;
+    case 3: // PPS_IN曼彻斯特后半
+      HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin,
+                        ppsin ? GPIO_PIN_RESET : GPIO_PIN_SET);
+      break;
     }
-
-    // 合成信号输出：PPS高电平优先，PPS低电平期间为曼彻斯特/前导码
-    GPIO_PinState pps_now = HAL_GPIO_ReadPin(PPS_GPIO_Port, PPS_Pin);
-    if (pps_now == GPIO_PIN_SET) {
-      HAL_GPIO_WritePin(COMPOSITE_GPIO_Port, COMPOSITE_Pin, GPIO_PIN_SET);
-    }
-    // 否则COMPOSITE已由前导码/曼彻斯特逻辑写入
+    manchester_slot = (manchester_slot + 1) % 4;
   }
 }
 /* USER CODE END 4 */

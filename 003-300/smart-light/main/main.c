@@ -68,6 +68,10 @@ void app_main(void) {
   int last_led_brightness = -1;
   int last_led_r = -1, last_led_g = -1, last_led_b = -1;
 
+  // 新增：PIR保持时间机制
+  const int PIR_HOLD_MS = 5000; // 保持5秒
+  int pir_hold_counter = 0;
+
   while (1) {
     // 1. 读取所有输入
     bool remote_power_on = false;
@@ -75,6 +79,13 @@ void app_main(void) {
     bool voice_on = false;
     bool voice_valid = false;
     bool pir_on = pir_detected();
+    // PIR保持机制
+    if (pir_on) {
+      pir_hold_counter = PIR_HOLD_MS / 500; // 每次循环500ms
+    } else if (pir_hold_counter > 0) {
+      pir_hold_counter--;
+    }
+    bool pir_effective = (pir_hold_counter > 0);
     int light = ldr_read();
     voice_get_light_state(&voice_on, &voice_valid);
     bool remote_available = false;
@@ -84,6 +95,12 @@ void app_main(void) {
       remote_available = remote_commanded_power_this_session;
     }
 
+    // 串口调试输出各输入状态
+    printf("[DEBUG] remote_available=%d, remote_power_on=%d, voice_valid=%d, "
+           "voice_on=%d, pir_on=%d, pir_effective=%d, light=%d\n",
+           remote_available, remote_power_on, voice_valid, voice_on, pir_on,
+           pir_effective, light);
+
     // 2. 处理优先级平等：谁最后有新指令就用谁的
     // 优先顺序：远程>语音>自动 变为 并列，谁有新指令就用谁
     // 检查远程
@@ -91,11 +108,13 @@ void app_main(void) {
       led_on = remote_power_on;
       led_brightness = remote_power_on ? 255 : 0;
       led_r = led_g = led_b = remote_power_on ? 255 : 0;
+      printf("[DEBUG] 控制来源: 远程\n");
     } else if (voice_valid) {
       led_on = voice_on;
       led_brightness = voice_on ? 255 : 0;
       led_r = led_g = led_b = voice_on ? 255 : 0;
-    } else if (pir_on) {
+      printf("[DEBUG] 控制来源: 语音\n");
+    } else if (pir_effective) {
       // 自动模式
       if (light < 200) {
         led_on = true;
@@ -105,21 +124,26 @@ void app_main(void) {
         if (led_brightness > 255)
           led_brightness = 255;
         led_r = led_g = led_b = led_brightness;
+        printf("[DEBUG] 控制来源: 自动(暗)\n");
       } else {
         led_on = true;
         led_brightness = 10;
         led_r = led_g = led_b = 10;
+        printf("[DEBUG] 控制来源: 自动(亮)\n");
       }
     } else {
       // 无人
       led_on = false;
       led_brightness = 0;
       led_r = led_g = led_b = 0;
+      printf("[DEBUG] 控制来源: 无人\n");
     }
 
     // 3. 应用灯状态（只有变化时才操作）
     if (led_on != last_led_on || led_brightness != last_led_brightness ||
         led_r != last_led_r || led_g != last_led_g || led_b != last_led_b) {
+      printf("[DEBUG] 灯状态变化: led_on=%d, brightness=%d, rgb=(%d,%d,%d)\n",
+             led_on, led_brightness, led_r, led_g, led_b);
       for (int i = 0; i < 30; ++i)
         ws2812_set_pixel(i, led_r, led_g, led_b);
       ws2812_show();
