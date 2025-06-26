@@ -3,7 +3,7 @@
 
 // ==== 配置参数 ====
 #define TDM_SYNC_PATTERN 0x5A
-#define TDM_MAX_PAYLOAD 128
+#define TDM_MAX_PAYLOAD 64
 #define TDM_FRAME_BUF_SIZE 8
 #define TOD_SEG_BUF_SIZE 8
 #define PPS_EVT_BUF_SIZE 8
@@ -220,6 +220,14 @@ void send_tdm_frame() {
 
     frame.payload_length = pl_len;
     frame.crc = crc8((uint8_t*)&frame, sizeof(SmartTDMFrame) - 1);
+
+    // 调试输出帧头信息
+    Serial.print("[TDM FRAME] sync_header: 0x"); Serial.print(frame.sync_header, HEX);
+    Serial.print(" frame_type: 0x"); Serial.print(frame.frame_type, HEX);
+    Serial.print(" sequence: 0x"); Serial.print(frame.sequence, HEX);
+    Serial.print(" timestamp: 0x"); Serial.print(frame.timestamp, HEX);
+    Serial.print(" payload_length: 0x"); Serial.print(frame.payload_length, HEX);
+    Serial.print(" crc: 0x"); Serial.println(frame.crc, HEX);
 
     // NRZI编码
     uint8_t nrzi_buf[128] = {0};
