@@ -80,6 +80,10 @@ static bool tod_sent = false;
 static uint32_t gps_tow = 0;        // GPS time of week counter
 static uint16_t gps_week = 2267;    // Current GPS week (example)
 
+// --- 新增TOD时序控制变量 ---
+static bool tod_pending = false;           // TOD帧是否待发送
+static uint32_t tod_trigger_time = 0;      // TOD帧允许发送的时间点（PPS下降沿+16ms）
+
 // TDM state
 static uint32_t last_tdm_time = 0;
 static bool tdm_source_select = false;  // false=TOD_IN, true=PPS_IN
@@ -245,38 +249,30 @@ void process_tdm() {
  * 1Hz频率, 100ms高电平脉宽 (由硬件定时器精确控制), 900ms低电平
  */
 void generate_pps() {
-    uint32_t current_time = millis(); // 获取当前时间
+    uint32_t current_time = millis();
 
     // --- PPS上升沿处理 (周期开始) ---
-    // 如果当前PPS为低电平状态，并且自上次PPS上升沿以来已过1秒周期
     if (!pps_state && (current_time - last_pps_time >= PPS_PERIOD_MS)) {
         digitalWrite(PIN_PPS_OUT, HIGH); // 将PPS信号拉高
-        pps_state = true;                // 更新PPS状态为高
-        last_pps_time = current_time;    // 记录当前时间作为本次PPS周期的开始时间
-        tod_sent = false;                // 重置TOD发送标志，允许为本次PPS脉冲发送TOD
-
+        pps_state = true;
+        last_pps_time = current_time;
+        tod_sent = false;
+        tod_pending = false;
 #if defined(STM32_CORE_VERSION) && (STM32_CORE_VERSION >= 0x02000000)
-        // 配置并启动硬件定时器以控制100ms的PPS高电平脉宽
         if (ppsPulseTimer) {
-            ppsPulseTimer->setCount(0); // 重置定时器计数
-            ppsPulseTimer->resume();    // 启动/恢复定时器
+            ppsPulseTimer->setCount(0);
+            ppsPulseTimer->resume();
         }
-#else
-        // 如果硬件定时器不可用，PPS脉宽将不准确，并受TOD发送阻塞影响
-        // 这种情况下，PPS高电平会持续到TOD发送完毕（约465ms）
 #endif
     }
 
     // --- TOD帧发送触发 ---
-    // 在PPS上升沿1ms后发送TOD帧 (仅在PPS为高且TOD未发送时执行一次)
-    // last_pps_time 在这里是当前PPS脉冲的上升沿时间点
-    if (pps_state && !tod_sent && (current_time - last_pps_time >= TOD_DELAY_MS)) {
-        send_tod_frame(); // 发送TOD帧 (这是一个阻塞操作)
-        tod_sent = true;  // 标记TOD已为本次PPS脉冲发送
+    // 仅在PPS下降沿后16ms及以上，且本周期未发送TOD时执行
+    if (tod_pending && !tod_sent && ((int32_t)(current_time - tod_trigger_time) >= 0)) {
+        send_tod_frame();
+        tod_sent = true;
+        tod_pending = false;
     }
-
-    // PPS的拉低操作现在由 ppsTimerISR 中断服务程序处理
-    // 因此，原先在此处的基于 millis() 的拉低逻辑已移除
 }
 
 // PPS脉宽定时器中断服务程序
@@ -288,6 +284,9 @@ void ppsTimerISR() {
     ppsPulseTimer->pause(); // 停止定时器，直到下一次PPS脉冲
   }
 #endif
+  // --- TOD发送时序控制 ---
+  tod_pending = true; // 标记TOD帧待发送
+  tod_trigger_time = millis() + 16; // 记录允许发送TOD的时间点（PPS下降沿+16ms）
 }
 
 void setup() {
@@ -299,7 +298,7 @@ void setup() {
     pinMode(PIN_TDM_OUT, OUTPUT);
 
     // Set initial states
-    digitalWrite(PIN_TOD_OUT, HIGH);   // UART idle state
+    digitalWrite(PIN_TOD_OUT, HIGH);   // TOD空闲高电平
     digitalWrite(PIN_PPS_OUT, LOW);    // PPS信号初始状态为低
     digitalWrite(PIN_TDM_OUT, LOW);    // TDM信号初始状态为低
 
